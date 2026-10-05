@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/yetone/magpie/internal/access"
 	"github.com/yetone/magpie/internal/codexcat"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/usage"
@@ -790,6 +791,25 @@ func (s *Server) codexModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ms := provider.CodexListed()
+	// a key held to a subset of the catalog (#882) is handed only that of
+	// magpie's own — the account's list the backend answers is the
+	// account's, not the key's to narrow
+	if who := access.Caller(r.Context()); len(who.Models) > 0 {
+		find := provider.GroupFinder()
+		kept := ms[:0]
+		for _, m := range ms {
+			if strings.HasPrefix(m.ID, provider.GroupPrefix) {
+				if _, members, ok := find(m.ID); ok && modelAllowed(who, m.ID, members) {
+					kept = append(kept, m)
+				}
+				continue
+			}
+			if inModels(who.Models, m.ID) {
+				kept = append(kept, m)
+			}
+		}
+		ms = kept
+	}
 	// the list is the backend's and magpie's, and so is its ETag
 	w.Header().Set("ETag", codexcat.WithTag(etag, provider.CodexListTag()))
 	all := append(own, codexcat.Entries(ms, len(own)+100)...)

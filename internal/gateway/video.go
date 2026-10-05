@@ -519,6 +519,13 @@ func (s *Server) videosCreate(w http.ResponseWriter, r *http.Request) {
 		fail(404, fmt.Sprintf("magpie knows no model %q to make videos with", f.Model))
 		return
 	}
+	// a key held to a subset of the catalog (#882) makes no video on a
+	// model outside it — the default videomaker included
+	if resolvedRefused(w, r, provider.Chat, f.Model, p, model) {
+		call.Status, call.Error, call.Millis = 403, "model outside the key's models", time.Since(start).Milliseconds()
+		s.record(call)
+		return
+	}
 	call.Provider, call.To = p.ID, provider.Chat
 	remote := p.IsRemoteMagpie()
 	// any grok-imagine-video*, not only those listed: the vendor's newer ones work before magpie names them

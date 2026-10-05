@@ -39,12 +39,19 @@ type Key struct {
 	Masked string `json:"masked,omitempty"`
 	// Limit is the key's own budget (#585); nil for none.
 	Limit *Limit `json:"limit,omitempty"`
+	// Models is the subset of the catalog the key may serve (#882), as
+	// "provider/model" ids and "provider/*" wildcards; nil for every
+	// model, as keys always were.
+	Models []string `json:"models,omitempty"`
 }
 
 // Identity is the gateway key a request came with, and its budget.
 type Identity struct {
 	KeyID, KeyName string
 	Limit          *Limit
+	// Models is the subset of the catalog the key may serve (#882); nil
+	// for every model.
+	Models []string
 }
 type contextKey struct{}
 
@@ -147,6 +154,9 @@ type Change struct {
 	Name string `json:"name"`
 	// Limit is what "limit-key" sets; nil or Unlimited takes the limit off.
 	Limit *Limit `json:"limit,omitempty"`
+	// Models is what "models-key" sets (#882); nil or empty takes the
+	// whitelist off, making every model the key's again.
+	Models []string `json:"models,omitempty"`
 }
 
 // Update writes the named key store atomically.
@@ -201,6 +211,12 @@ func Update(action string, in Change) (string, error) {
 				return "", err
 			}
 			keys[i].Limit = lim
+		case "models-key":
+			ms, err := ValidModels(in.Models)
+			if err != nil {
+				return "", err
+			}
+			keys[i].Models = ms
 		case "on-key", "off-key":
 			keys[i].Off = action == "off-key"
 		case "remove-key":
@@ -215,7 +231,7 @@ func Update(action string, in Change) (string, error) {
 		default:
 			return "", fmt.Errorf("unknown key action %q", action)
 		}
-		if defaultKey && action != "remove-key" && action != "rename-key" && action != "limit-key" {
+		if defaultKey && action != "remove-key" && action != "rename-key" && action != "limit-key" && action != "models-key" {
 			mirror = &keys[i]
 		}
 	}
@@ -262,7 +278,7 @@ func Authenticate(secret string) (Identity, bool) {
 			if k.Off {
 				return Identity{}, false
 			}
-			return Identity{k.ID, k.Name, k.Limit}, true
+			return Identity{k.ID, k.Name, k.Limit, k.Models}, true
 		}
 	}
 	s := settings.Load()

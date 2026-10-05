@@ -3,6 +3,7 @@ package access
 import (
 	"errors"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/yetone/magpie/internal/settings"
@@ -29,7 +30,11 @@ func TestLegacyLANFallbackBeforeMigration(t *testing.T) {
 	if err := MigrateLegacyLANKey(); err != nil {
 		t.Fatal(err)
 	}
-	if after, ok := Authenticate(s.LANKey); !ok || after != before {
+	// Identity holds a []string now (#882), so it is compared field by
+	// field rather than as a whole: its id, name and models are what a
+	// caller's usage identity is
+	if after, ok := Authenticate(s.LANKey); !ok || after.KeyID != before.KeyID || after.KeyName != before.KeyName ||
+		!slices.Equal(after.Models, before.Models) {
 		t.Fatal("migration split the legacy caller's usage identity", before, after, ok)
 	}
 }

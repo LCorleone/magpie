@@ -210,6 +210,9 @@ magpie gateway-key remove <id>         # revokes remote access
 magpie gateway-key limit <id> week --tokens 2m --cost 5   # its own limit
 magpie gateway-key limit <id>          # limit, used, left and reset
 magpie gateway-key limit <id> off      # no limit
+magpie gateway-key models <id> openai/gpt-5-mini deepseek/*   # only these models
+magpie gateway-key models <id>         # the models it may use
+magpie gateway-key models <id> off     # every model, as keys always were
 ```
 
 Each gateway key can have its own **limit**: a token total, an estimated
@@ -230,6 +233,21 @@ streamed reply is settled when it ends with the usage its vendor reported.
 A key can read its own status with `GET /v1/magpie/limit`. Requests from
 this computer that send no gateway key are not limited; a gateway key used
 from this computer is.
+
+Each gateway key can also be held to a **subset of the models**: only the
+models it lists, every model when it lists none, as keys always were. An
+entry is a catalog id (`openai/gpt-5-mini`) or all of one provider's
+models (`deepseek/*`); set it with **Models** on the key's row (saved with
+Save) or `magpie gateway-key models`. A request for a model outside the
+subset — however it is named: bare, prefixed, a stand-in's target, a
+routing group — is refused with a 403 in the API's own error shape before
+any provider is asked; a routing group passes only when every member is
+in the subset, and counting tokens is refused the same way. The model
+lists a key is handed (`/v1/models` and each API's own) show only its
+subset, and the ChatGPT backend's list keeps the account's own models
+while narrowing the ones magpie adds. Requests from this computer that
+send no gateway key take every model; a gateway key used from this
+computer is held to its subset.
 
 While LAN sharing is enabled, remote requests require an enabled gateway key
 sent as Bearer, `x-api-key`, `x-goog-api-key` or `?key=`. Loopback remains

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -226,7 +227,13 @@ func TestNamedLANKeyKeepsItsName(t *testing.T) {
 				}
 			}
 			keys, err := load()
-			if err != nil || len(keys) != 3 || keys[0] != original[0] || keys[1] != original[1] || keys[2] != original[2] {
+			// Key holds a []string now (#882), so it is compared field by field
+			// rather than as a whole
+			same := func(a, b Key) bool {
+				return a.ID == b.ID && a.Name == b.Name && a.Off == b.Off && a.Secret == b.Secret &&
+					slices.Equal(a.Models, b.Models)
+			}
+			if err != nil || len(keys) != 3 || !same(keys[0], original[0]) || !same(keys[1], original[1]) || !same(keys[2], original[2]) {
 				t.Fatal("migration changed an existing named key", keys, err)
 			}
 		})

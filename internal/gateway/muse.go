@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"net/http"
 
+	"github.com/yetone/magpie/internal/access"
 	"github.com/yetone/magpie/internal/provider"
 )
 
@@ -22,7 +23,8 @@ const (
 // list of none it refuses). The ids are the catalog's, which Muse sends back
 // as the model it asks /v1/responses for.
 func (s *Server) museModels(w http.ResponseWriter, r *http.Request) {
-	shown := catalogFor(r)
+	// a key held to a subset of the catalog (#882) is shown only that
+	shown := catalogShown(access.Caller(r.Context()), catalogFor(r))
 	labels := provider.Labels(shown)
 	data := []map[string]any{}
 	for i, e := range shown {

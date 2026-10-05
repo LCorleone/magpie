@@ -28,6 +28,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	"github.com/yetone/magpie/internal/access"
 	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/plugin"
 	"github.com/yetone/magpie/internal/provider"
@@ -665,7 +666,8 @@ func catalogFor(r *http.Request) []provider.Entry {
 
 func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 	data := []map[string]any{}
-	shown := catalogFor(r)
+	// a key held to a subset of the catalog (#882) is shown only that
+	shown := catalogShown(access.Caller(r.Context()), catalogFor(r))
 	if agentOf(r) == "claude-desktop" {
 		data = desktopModels(shown)
 	} else {
@@ -683,11 +685,16 @@ func (s *Server) models(w http.ResponseWriter, r *http.Request) {
 			data = append(data, m)
 		}
 	}
-	if r.Header.Get(provider.DrawersHeader) != "" {
-		data = append(data, drawerObjects()...)
-	}
-	if r.Header.Get(provider.VideomakersHeader) != "" {
-		data = append(data, videomakerObjects()...)
+	if r.Header.Get(provider.DrawersHeader) != "" || r.Header.Get(provider.VideomakersHeader) != "" {
+		// a key held to a subset of the catalog (#882) is shown only that
+		// of the appended drawers and videomakers too
+		who := access.Caller(r.Context())
+		if r.Header.Get(provider.DrawersHeader) != "" {
+			data = append(data, shownObjects(who, drawerObjects())...)
+		}
+		if r.Header.Get(provider.VideomakersHeader) != "" {
+			data = append(data, shownObjects(who, videomakerObjects())...)
+		}
 	}
 	// ?format=text: the ids one a line, to paste into a client that takes
 	// its models typed by hand, one a line, and asks no list of its own
@@ -713,6 +720,11 @@ func (s *Server) model(w http.ResponseWriter, r *http.Request) {
 	id := unprefixed(r.PathValue("id"))
 	for _, e := range provider.Catalog() {
 		if e.ID == id {
+			// a key held to a subset of the catalog (#882) is told no
+			// more of the one outside it than a model magpie knows none of
+			if !modelAllowed(access.Caller(r.Context()), id, groupMembersOf(id)) {
+				break
+			}
 			writeJSON(w, 200, modelObject(e))
 			return
 		}
@@ -789,6 +801,11 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 	id := unprefixed(model)
 	if sid, ok := provider.AutoStandIn(id); ok {
 		id = sid
+	}
+	// a key held to a subset of the catalog (#882) counts no tokens on a
+	// model outside it, as it would serve none on one
+	if modelRefused(w, r, provider.Anthropic, id) {
+		return
 	}
 	p, model, ok := provider.Resolve(id)
 	s.countOn(w, r, p, model, ok, body)
@@ -952,6 +969,11 @@ func (s *Server) gemini(w http.ResponseWriter, r *http.Request) {
 	case "streamGenerateContent":
 		stream = true
 	case "countTokens":
+		// a key held to a subset of the catalog (#882) counts no tokens
+		// on a model outside it
+		if modelRefused(w, r, provider.Gemini, model) {
+			return
+		}
 		s.geminiCount(w, model, body)
 		return
 	default:
@@ -980,7 +1002,8 @@ func (s *Server) geminiCount(w http.ResponseWriter, model string, body []byte) {
 
 func (s *Server) geminiModels(w http.ResponseWriter, r *http.Request) {
 	models := []map[string]any{}
-	for _, e := range catalogFor(r) {
+	// a key held to a subset of the catalog (#882) is shown only that
+	for _, e := range catalogShown(access.Caller(r.Context()), catalogFor(r)) {
 		models = append(models, geminiModel(e.ID, e.Name))
 	}
 	writeJSON(w, 200, map[string]any{"models": models})
@@ -1062,14 +1085,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		}
 	}
 	// a request turned away before any provider was asked is in the log
-	// as the failure it was, with the reason
-	turnedAway := func() {
+	// as the failure it was, with the reason; errType names a gateway
+	// refusal of magpie's own (see key_limit.go), "" a vendor's
+	turnedAway := func(errType string) {
 		finishCapture()
 		call.Millis = time.Since(start).Milliseconds()
 		s.record(call)
 		rec := usage.Record{Time: start, Agent: call.Agent, Via: call.Via, Provider: call.Provider, Model: call.Model, Requested: call.Model,
 			Millis: call.Millis, Status: call.Status, Rejected: true, Session: sessionOf(r.Header), NativeSession: nativeSessionOf(r.Header), Kind: call.Kind, Endpoint: endpointOf(r, from, ""), Archive: call.archiveName()}
-		failedWith(&rec, call.Status, call.Error, "")
+		failedWith(&rec, call.Status, call.Error, errType)
 		withBodies(&rec, &call)
 		appendUsage(r, rec)
 	}
@@ -1115,7 +1139,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		if off, isOff := provider.SwitchedOff(asked); isOff {
 			call.Error = "provider switched off"
 			writeError(w, from, 404, switchedOff(off, call.Model))
-			turnedAway()
+			turnedAway("")
 			return
 		}
 		msg := fmt.Sprintf("magpie knows no model %q", call.Model)
@@ -1129,20 +1153,29 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			msg += "; add a provider in magpie first"
 		}
 		writeError(w, from, 404, msg)
-		turnedAway()
+		turnedAway("")
 		return
 	}
 	if p.DecidesModel(model) {
 		// Jev answers questions about a message, not the message
 		call.Status, call.Error = 400, "a decision model"
 		writeError(w, from, 400, fmt.Sprintf("%s only decides a routing group's model and effort; it holds no conversation", call.Model))
-		turnedAway()
+		turnedAway("")
 		return
 	}
 	// a routing group's rules pick the member that goes first, looked at
 	// before any image is taken out of the request: one may be for images
 	g, ms, isGroup := provider.FindGroup(asked)
 	g = g.Live() // a manual group's rules wait
+	// a key held to a subset of the catalog (#882) takes the model — or
+	// the group, only when every member is in it — and is told which it
+	// takes, before anything of the request is read further
+	if !modelAllowed(access.Caller(r.Context()), p.ID+"/"+model, ms) {
+		call.Status, call.Error = 403, "model outside the key's models"
+		writeError(w, from, 403, refusedModels(access.Caller(r.Context()), call.Model))
+		turnedAway("gateway_key_models")
+		return
+	}
 	// a Codex subagent's task its lead sealed — the lead answered by a
 	// ChatGPT account, the group's own or Codex's — goes only to a ChatGPT
 	// account, the lead's first (#619); with none, it is turned away
@@ -1151,7 +1184,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	if sealedTask && !(isGroup && slices.ContainsFunc(ms, func(m provider.Member) bool { return sealedReader(m.Provider) }) || !isGroup && sealedReader(p)) {
 		call.Status, call.Error = 400, "sealed subagent task"
 		writeError(w, from, 400, sealedTaskError(call.Model))
-		turnedAway()
+		turnedAway("")
 		return
 	}
 	var hit *RuleHit
@@ -1213,7 +1246,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			if err != nil {
 				call.Status, call.Error = 502, "image not described"
 				writeError(w, from, 502, fmt.Sprintf("model %q can't see images, and %s couldn't describe the image for it: %v", call.Model, see, err))
-				turnedAway()
+				turnedAway("")
 				return
 			}
 			body = seen
@@ -1231,7 +1264,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		if currentImage {
 			call.Status, call.Error = 400, "model does not support image input"
 			writeError(w, from, 400, fmt.Sprintf("model %q does not support image input", call.Model))
-			turnedAway()
+			turnedAway("")
 			return
 		}
 	}
@@ -1272,20 +1305,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		}
 		call.Status, call.Error = 429, "every account at its usage cap"
 		writeError(w, from, 429, msg)
-		turnedAway()
+		turnedAway("")
 		return
 	}
 	if len(cands) == 0 && len(pl.left) > 0 && !slices.ContainsFunc(pl.left, func(w Weighed) bool { return !w.Barred }) {
 		// every account or key there is was set not to serve the model
 		call.Status, call.Error = 403, "every account barred"
 		writeError(w, from, 403, barredError(call.Model, pl.left))
-		turnedAway()
+		turnedAway("")
 		return
 	}
 	if len(cands) == 0 {
 		call.Status, call.Error = 404, "no member ready"
 		writeError(w, from, 404, fmt.Sprintf("none of %s's models is ready", call.Model))
-		turnedAway()
+		turnedAway("")
 		return
 	}
 	// the conversation stays with who answered it last, while its
@@ -1372,7 +1405,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			if len(cands) == 0 {
 				call.Status, call.Error = 400, "model does not support image input"
 				writeError(w, from, 400, fmt.Sprintf("model %q does not support image input", call.Model))
-				turnedAway()
+				turnedAway("")
 				return
 			}
 		}

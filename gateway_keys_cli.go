@@ -26,8 +26,12 @@ func gatewayKeysTo(out io.Writer, args []string) error {
 		access.MigrateLegacyLANKeyBestEffort()
 		return gatewayKeyLimit(out, args[1:])
 	}
+	if action == "models" {
+		access.MigrateLegacyLANKeyBestEffort()
+		return gatewayKeyModels(out, args[1:])
+	}
 	if (action == "list" && len(args) != 1) || (action != "list" && len(args) != 2) {
-		return fmt.Errorf("usage: magpie gateway-key list | add <name> | rotate <id> | remove <id> | limit <id> [off | day|week|month [--tokens N] [--cost USD] [--cache-reads]]")
+		return fmt.Errorf("usage: magpie gateway-key list | add <name> | rotate <id> | remove <id> | limit <id> [off | day|week|month [--tokens N] [--cost USD] [--cache-reads]] | models <id> [off | <provider/model>...]")
 	}
 	switch action {
 	case "list", "add", "rotate", "remove":
@@ -201,4 +205,51 @@ func limitWords(k access.Key, now time.Time) string {
 		s += " (spent until " + st.Reset.Format("01-02 15:04") + ")"
 	}
 	return s
+}
+
+// gatewayKeyModels shows or sets a key's model whitelist (#882):
+//
+//	magpie gateway-key models <id>            the models the key may use
+//	magpie gateway-key models <id> off        every model, as keys always were
+//	magpie gateway-key models <id> <provider/model>… | <provider>/* …
+func gatewayKeyModels(out io.Writer, args []string) error {
+	usage := fmt.Errorf("usage: magpie gateway-key models <id> [off | <provider/model>...]")
+	if len(args) == 0 {
+		return usage
+	}
+	id := args[0]
+	if len(args) > 1 {
+		var models []string
+		if args[1] != "off" {
+			models = args[1:]
+		} else if len(args) > 2 {
+			return usage
+		}
+		if _, err := access.Update("models-key", access.Change{Key: id, Models: models}); err != nil {
+			return err
+		}
+	}
+	keys, err := access.List()
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(keys, func(k access.Key) bool { return k.ID == id })
+	if i < 0 {
+		return fmt.Errorf("Key not found")
+	}
+	k := keys[i]
+	if len(k.Models) == 0 {
+		_, err = fmt.Fprintf(out, "%s (%s): every model\n", k.Name, k.ID)
+		return err
+	}
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	fmt.Fprintf(w, "Key\t%s (%s)\n", k.Name, k.ID)
+	for i, m := range k.Models {
+		if i == 0 {
+			fmt.Fprintf(w, "Models\t%s\n", m)
+		} else {
+			fmt.Fprintf(w, "\t%s\n", m)
+		}
+	}
+	return w.Flush()
 }

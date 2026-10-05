@@ -265,6 +265,13 @@ func (s *Server) images(edit bool) http.HandlerFunc {
 			fail(404, fmt.Sprintf("magpie knows no model %q to draw with", d.Model))
 			return
 		}
+		// a key held to a subset of the catalog (#882) draws with no model
+		// outside it — the default drawer included
+		if resolvedRefused(w, r, provider.Chat, d.Model, p, model) {
+			call.Status, call.Error, call.Millis = 403, "model outside the key's models", time.Since(start).Milliseconds()
+			s.record(call)
+			return
+		}
 		var unmask func()
 		w, d.Prompt, unmask = redactedPrompt(w, d.Prompt)
 		defer unmask()

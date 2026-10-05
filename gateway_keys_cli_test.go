@@ -131,3 +131,58 @@ func TestGatewayKeyLimitCLI(t *testing.T) {
 		t.Fatal("off kept", keys[0].Limit)
 	}
 }
+
+// magpie gateway-key models sets, shows and takes off a key's model
+// whitelist, and refuses what can't be one (#882).
+func TestGatewayKeyModelsCLI(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := settings.Save(settings.Settings{LAN: true}); err != nil {
+		t.Fatal(err)
+	}
+	call := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := gatewayKeysTo(&out, append([]string{"gateway-key"}, args...))
+		return out.String(), err
+	}
+	if _, err := call("add", "Intern"); err != nil {
+		t.Fatal(err)
+	}
+	keys, _ := access.List()
+	id := keys[0].ID
+	if got, err := call("models", id); err != nil || !strings.Contains(got, "every model") {
+		t.Fatal(got, err)
+	}
+	got, err := call("models", id, "openai/gpt-5-mini", " deepseek/* ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, _ = access.List()
+	if m := keys[0].Models; len(m) != 2 || m[0] != "openai/gpt-5-mini" || m[1] != "deepseek/*" {
+		t.Fatalf("models kept as %v", m)
+	}
+	for _, want := range []string{"openai/gpt-5-mini", "deepseek/*"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("models show %q, without %q", got, want)
+		}
+	}
+	// what can't be a model is refused, by the shape every model key has
+	if _, err := call("models", id, "gpt-5-mini"); err == nil || !strings.Contains(err.Error(), "<provider>/<model>") {
+		t.Fatal("accepted a bare model", err)
+	}
+	if _, err := call("models", id, "openai/"); err == nil {
+		t.Fatal("accepted a wildcard without its provider's models")
+	}
+	for _, args := range [][]string{{"models"}, {"models", id, "off", "extra"}, {"models", "missing", "a/m"}} {
+		if _, err := call(args...); err == nil {
+			t.Error("accepted", args)
+		}
+	}
+	if got, err := call("models", id, "off"); err != nil || !strings.Contains(got, "every model") {
+		t.Fatal(got, err)
+	}
+	if keys, _ = access.List(); keys[0].Models != nil {
+		t.Fatal("off kept models", keys[0].Models)
+	}
+}

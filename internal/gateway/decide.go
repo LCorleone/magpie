@@ -422,6 +422,11 @@ func (s *Server) serveSystemOne(w http.ResponseWriter, r *http.Request) {
 	if asked == "" {
 		asked = p.ID + "/" + model
 	}
+	// a key held to a subset of the catalog (#882) decides on no model
+	// outside it
+	if resolvedRefused(w, r, provider.Chat, asked, p, model) {
+		return
+	}
 	seat := decideSeat(p, model)
 	var used Usage
 	tr := s.trace.begin(Route{Time: start, Agent: agentOf(r), Session: sessionOf(r.Header), Model: asked, Provider: p.ID,

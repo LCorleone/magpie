@@ -56,6 +56,13 @@ func (s *Server) retrieve(path, operation string) http.HandlerFunc {
 			s.record(call)
 			return
 		}
+		// a key held to a subset of the catalog (#882) retrieves no
+		// embeddings from a model outside it
+		if modelRefused(w, r, provider.Chat, asked) {
+			call.Status, call.Error = 403, "model outside the key's models"
+			s.record(call)
+			return
+		}
 		call.To = provider.Chat
 		// a routing group's members are tried as its routing orders them,
 		// each account or key of theirs too (#773), the next asked when one

@@ -211,3 +211,50 @@ func TestGatewayKeyRestoreFailureKeepsSettingsAndKeys(t *testing.T) {
 		})
 	}
 }
+
+// A key's model whitelist (#882) rides a backup: the store is sealed as
+// it is kept, and what it is held to comes back with the key.
+func TestGatewayKeyModelsBackupRoundTrip(t *testing.T) {
+	home(t)
+	if err := access.ConfigureLAN(true, false); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := access.Update("add-key", access.Change{Name: "Intern"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, _ := access.List()
+	if _, err := access.Update("models-key", access.Change{Key: keys[1].ID, Models: []string{"openai/gpt-5-mini", " deepseek/* "}}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Collect(true, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := Seal(b, "gateway passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	home(t)
+	b, err = Open(data, "gateway passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.GatewayKeys == nil {
+		t.Fatal("backup carried no gateway keys")
+	}
+	for _, k := range *b.GatewayKeys {
+		if k.ID != keys[1].ID {
+			continue
+		}
+		if len(k.Models) != 2 || k.Models[0] != "openai/gpt-5-mini" || k.Models[1] != "deepseek/*" {
+			t.Fatalf("backup carried the models as %v", k.Models)
+		}
+	}
+	if _, err := Restore(b, Parts{Settings: true}); err != nil {
+		t.Fatal(err)
+	}
+	if who, ok := access.Authenticate(secret); !ok || len(who.Models) != 2 || who.Models[1] != "deepseek/*" {
+		t.Fatalf("restored key's models: %+v %v", who, ok)
+	}
+}
