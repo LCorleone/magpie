@@ -144,6 +144,7 @@ func TestSettingsSaveKeepsWhatItDoesNotSend(t *testing.T) {
 		UpdateMirror:        "https://mirror.example/",
 		Window:              []int{900, 700},
 		FullContext:         true,
+		GatewayMode:         "off",
 	}
 	if err := settings.Save(was); err != nil {
 		t.Fatal(err)

@@ -3,10 +3,14 @@
 // narrow model menu cut "Long name · routing group" short, and the setting
 // that drops the suffix (Settings › Provider in model names, #335) wasn't
 // found. It is now offered where names are given too: the provider editor's
-// Names & levels and a routing group's editor each have the three choices,
-// say what the agents' lists will show ("My Sol · Relay", "Fast · routing
-// group"), and a pick posts settings/plain-names once, the line following
-// it and the page not scrolled by the click. English and Chinese.
+// Names & levels has the three choices and says what the agents' lists will
+// show ("My Sol · Relay"). For the routing groups it is one setting for them
+// all, so it sits over the groups on Routing, not in one group's editor (PAMI
+// on Discord: in there it read as that group's alone); the editor only says
+// what its group will be called ("Fast · routing group") and where that is
+// set. A pick posts settings/plain-names once, an open editor's line follows
+// it (its unsaved name kept), and the click doesn't scroll the page. English
+// and Chinese.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -16,9 +20,9 @@ const { chromium, webkit } = require("playwright");
 const assets = path.resolve(__dirname, "../assets");
 const words = {
   en: { names: "Names & levels", edit: "Edit", own: "Not on names I set", on: "On", off: "Off", label: "In agents’ lists",
-    shows: (l) => `Agents’ lists show “${l}”` },
+    shows: (l) => `Agents’ lists show “${l}”`, above: " · “· routing group” is set for every group above", setting: "Names in agents’ lists" },
   zh: { names: "名称与推理档位", edit: "编辑", own: "自定义名称不带供应商", on: "开启", off: "关闭", label: "Agent 列表里的名称",
-    shows: (l) => `Agent 的模型列表里显示为「${l}」` },
+    shows: (l) => `Agent 的模型列表里显示为「${l}」`, above: " · 是否带「· routing group」在上方统一设置，对所有路由组生效", setting: "Agent 列表里的名称" },
 };
 
 function serve(lang, posts) {
@@ -100,30 +104,44 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(errors, []);
     });
 
-    test(`${engine} ${lang}: a group's editor says what agents' lists show and drops "· routing group" there`, async (t) => {
+    test(`${engine} ${lang}: "· routing group" is set over the groups, for all of them, and a group's editor says what it shows`, async (t) => {
       const posts = [];
       const { page, errors } = await launch(t, engine, lang, posts);
       await page.goto("http://magpie.test/?view=routing");
       const card = page.locator(".rt-group", { hasText: "Fast" });
       await card.waitFor();
+      // the setting is over the groups, before the first card
+      const set = page.locator(".rt-gnames");
+      await set.waitFor();
+      assert.equal((await set.locator("b").textContent()).trim(), w.setting);
+      assert.deepEqual((await set.locator(".segs .opt").allTextContents()).map((s) => s.trim()), [w.off, w.own, w.on]);
+      assert.equal((await set.locator(".opt.on").textContent()).trim(), w.on);
+      assert.ok(await set.evaluate((s) => !!(s.compareDocumentPosition(document.querySelector(".rt-group")) & Node.DOCUMENT_POSITION_FOLLOWING)), "the setting is over the groups");
       await card.locator("button", { hasText: w.edit }).click();
       const ed = page.locator(".rt-gedit");
       const row = ed.locator("label", { hasText: new RegExp(`^${w.label}$`) }).locator("xpath=following-sibling::div[1]");
       await row.waitFor();
-      assert.equal(await row.locator(".hint").textContent(), w.shows("Fast · routing group"));
+      // not in here: one group's editor has no choices of its own
+      assert.equal(await row.locator(".segs").count(), 0, "the group's editor has the setting for every group");
+      assert.equal(await row.locator(".hint").textContent(), w.shows("Fast · routing group") + w.above);
       // the name typed is the name shown
       await ed.locator("input").first().fill("Fast lane");
-      assert.equal(await row.locator(".hint").textContent(), w.shows("Fast lane · routing group"));
+      assert.equal(await row.locator(".hint").textContent(), w.shows("Fast lane · routing group") + w.above);
       const before = await scrolls(page);
-      await row.locator(".opt", { hasText: w.own }).click();
-      await row.locator(".opt.on", { hasText: w.own }).waitFor();
+      await set.locator(".opt", { hasText: w.own }).click();
+      await page.locator(".rt-gnames .opt.on", { hasText: w.own }).waitFor();
       assert.deepEqual(posts, [{ mode: "own" }]);
-      assert.equal(await row.locator(".hint").textContent(), w.shows("Fast lane"));
+      // the open editor follows it, its unsaved name kept
+      const row2 = page.locator(".rt-gedit label", { hasText: new RegExp(`^${w.label}$`) }).locator("xpath=following-sibling::div[1]");
+      assert.equal(await row2.locator(".hint").textContent(), w.shows("Fast lane") + w.above);
       assert.deepEqual(await scrolls(page), before, "the click scrolled the page");
       // nothing native, no stripe down the side
-      assert.equal(await ed.locator("select").count(), 0);
-      assert.equal(await row.evaluate((e) => getComputedStyle(e).borderLeftWidth), "0px");
-      const missing = await page.evaluate(() => ["Agents’ lists show “{label}”", "In agents’ lists", "Not on names I set", "Provider in model names"]
+      assert.equal(await page.locator("#view-routing select").count(), 0);
+      assert.equal(await set.evaluate((e) => getComputedStyle(e).borderLeftWidth), "0px");
+      assert.equal(await row2.evaluate((e) => getComputedStyle(e).borderLeftWidth), "0px");
+      const missing = await page.evaluate(() => ["Agents’ lists show “{label}”", "In agents’ lists", "Not on names I set", "Provider in model names",
+        "Names in agents’ lists", "“· routing group” is set for every group above",
+        "Whether “· routing group” follows a group’s name in the agents’ lists: one setting for every group, and for the provider after each model’s name, as on Settings."]
         .filter((k) => !I18N.zh[k] || !I18N.ja[k] || !I18N.de[k]));
       assert.deepEqual(missing, [], "every string has its Chinese, Japanese and German");
       assert.deepEqual(errors, []);

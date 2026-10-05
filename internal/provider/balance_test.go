@@ -367,3 +367,46 @@ func TestBalanceURLNamesTheKey(t *testing.T) {
 		t.Fatalf("error: %v", err)
 	}
 }
+
+// A known balance query read with its field left empty (#881): new-api's
+// for a key and for the account, OpenAI's old credit grants, a sub2api
+// panel's profile; a query magpie doesn't know still asks for the field.
+func TestKnownBalanceFieldLeftEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/usage/token", "/api/usage/token/":
+			w.Write([]byte(`{"code":true,"message":"ok","data":{"object":"token_usage","total_granted":2000000,"total_used":500000,"total_available":1500000,"unlimited_quota":false}}`))
+		case "/api/user/self":
+			w.Write([]byte(`{"success":true,"data":{"quota":1000000}}`))
+		case "/v1/dashboard/billing/credit_grants", "/dashboard/billing/credit_grants":
+			w.Write([]byte(`{"object":"credit_summary","total_granted":20,"total_used":7.5,"total_available":12.5}`))
+		case "/api/v1/user/profile":
+			w.Write([]byte(`{"code":0,"data":{"balance":4.2}}`))
+		default:
+			w.Write([]byte(`{"left":1}`))
+		}
+	}))
+	defer srv.Close()
+	for _, c := range []struct{ path, token, want string }{
+		{"/api/usage/token", "", "$3.00"},
+		{"/api/usage/token/", "", "$3.00"},
+		{"/api/user/self", "tok", "$2.00"},
+		{"/v1/dashboard/billing/credit_grants", "", "$12.50"},
+		{"/dashboard/billing/credit_grants", "", "$12.50"},
+		{"/api/v1/user/profile", "eyJ.a.b", "$4.20"},
+	} {
+		p := Provider{ID: "relay", Chat: srv.URL + "/v1", Key: "sk-one", BalanceURL: srv.URL + c.path, BalanceToken: c.token}
+		if got, ok, err := Balance(context.Background(), p); err != nil || !ok || got != c.want {
+			t.Errorf("%s: %q %v %v, want %q", c.path, got, ok, err, c.want)
+		}
+	}
+	// a field the user gave still wins
+	p := Provider{ID: "relay", Chat: srv.URL + "/v1", Key: "sk-one", BalanceURL: srv.URL + "/api/usage/token", BalancePath: "data.total_used"}
+	if got, _, err := Balance(context.Background(), p); err != nil || got != "500000.00" && got != "500000" {
+		t.Errorf("own field: %q %v", got, err)
+	}
+	p = Provider{ID: "relay", Chat: srv.URL + "/v1", Key: "sk-one", BalanceURL: srv.URL + "/other"}
+	if _, _, err := Balance(context.Background(), p); err == nil || !strings.Contains(err.Error(), "no balance path") {
+		t.Errorf("unknown query: %v", err)
+	}
+}

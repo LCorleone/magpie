@@ -279,6 +279,9 @@ button.rt-session { cursor: pointer; }
 .rt-group { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 14px; cursor: pointer; transition: background .12s; }
 .rt-group:hover { background: var(--card-2); }
 .rt-group.off { opacity: .6; }
+/* switched off as a whole: dimmed but for its switch, which brings it back */
+.rt-group.disabled > :not(.rt-gon) { opacity: .5; }
+.rt-group .rt-gon { flex: none; transform: scale(.85); }
 .rt-group .ics { display: flex; gap: 3px; flex: none; min-width: 18px; }
 .rt-group .ics .ic { width: 16px; height: 16px; }
 /* a group's logos are its handle (#779), as an agent row's logo is: the
@@ -325,10 +328,13 @@ button.rt-session { cursor: pointer; }
 .rt-pick.off { opacity: .55; }
 .rt-pick:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
 .rt-gnone { padding: 14px; font-size: 12px; line-height: 1.5; }
-.rt-gfound { display: flex; align-items: center; gap: 12px; padding: 2px 4px 4px; }
-.rt-gfound .txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.rt-gfound b { font-size: 12.5px; font-weight: 600; }
-.rt-gfound small { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+.rt-gfound, .rt-gnames { display: flex; align-items: center; gap: 12px; padding: 2px 4px 4px; }
+.rt-gfound .txt, .rt-gnames .txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.rt-gfound b, .rt-gnames b { font-size: 12.5px; font-weight: 600; }
+.rt-gfound small, .rt-gnames small { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+/* the names setting's three choices go under its words when it is narrow */
+.rt-gnames { flex-wrap: wrap; }
+.rt-gnames .txt { flex-basis: 220px; }
 .rt-ghidden { display: flex; align-items: center; padding: 4px 12px 4px 8px; }
 .rt-ghidden .rt-gremoved { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--faint); }
 .rt-ghidden .rt-gremoved:hover, .rt-ghidden .rt-gremoved.open { color: var(--fg-2); }
@@ -392,6 +398,16 @@ button.rt-session { cursor: pointer; }
 .rt-gedit .fbrow .n small { color: var(--muted); font-size: 11.5px; }
 .rt-gedit .fbrow.off .n { color: var(--muted); text-decoration: line-through; }
 .rt-gedit .fbrow .rt-mon { transform: scale(.85); }
+/* a named member's number is its handle: the grip beside it shows on
+   hover, dragged or from the keyboard only, as on the groups' cards */
+.rt-gedit .fbrow .rt-mhandle.ag-handle { position: relative; width: 18px; height: 22px; margin: 0 -2px; font: inherit; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rt-gedit .fbrow .rt-mhandle::before { content: ""; position: absolute; left: -7px; top: 50%; width: 5px; height: 11px; margin-top: -5.5px; background: radial-gradient(circle, var(--muted) .9px, transparent 1.2px) 0 0 / 3.5px 3.75px; opacity: 0; transition: opacity .15s; }
+.rt-gedit .fbrow:is(:hover, .dragging) .rt-mhandle::before, .rt-gedit .fbrow .rt-mhandle:focus-visible::before { opacity: 1; }
+.rt-gedit .fbl.sorting { user-select: none; -webkit-user-select: none; }
+.rt-gedit .fbl.sorting > .fbrow { transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
+.rt-gedit .fbl.sorting .rt-mhandle { cursor: grabbing; }
+.rt-gedit .fbl > .fbrow.dragging { position: relative; z-index: 2; background: var(--card); box-shadow: 0 6px 18px rgba(20, 22, 30, .12), 0 0 0 1px var(--line); border-radius: 8px; transition: none; }
+@media (prefers-reduced-motion: reduce) { .rt-gedit .fbl.sorting > .fbrow { transition: none; } }
 .rt-gedit .fbrow.muted > :not(.rt-mon):not(.text) { opacity: .45; }
 /* a member's own reasoning, beside its Up and Remove */
 .rt-gedit .fbrow .rt-fixed { height: 24px; padding: 0 9px; font-size: 11.5px; flex: none; }

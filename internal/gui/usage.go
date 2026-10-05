@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/yetone/magpie/internal/access"
@@ -149,7 +150,8 @@ type ledgerJSON struct {
 	// Series: the period by hour, day or week (Bucket), before the day filter
 	Bucket string              `json:"bucket"`
 	Series []usage.SeriesPoint `json:"series"`
-	// By: the rows told apart by provider, agent and model, the most tokens
+	// By: the rows told apart by provider, agent, model and model at each
+	// provider ("modelAt", named "model · provider"), the most tokens
 	// first. The one by a dimension the filter has picked is of the rows
 	// without that pick, so the others are still there to switch to.
 	By      map[string][]ledgerShare `json:"by"`
@@ -293,6 +295,11 @@ func ledgerPage(p usage.Period, f usage.Filter, offset, limit int) ledgerJSON {
 				case "agent":
 					a := who(s.ID)
 					ls.Name, ls.Icon = a.Name, a.Icon
+				case "modelAt":
+					// the model, and the provider it went to
+					prov, model, _ := strings.Cut(s.ID, "/")
+					a := which(prov)
+					ls.Name, ls.Icon = model+" · "+a.Name, a.Icon
 				}
 				shares = append(shares, ls)
 			}

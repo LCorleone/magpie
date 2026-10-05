@@ -35,6 +35,7 @@ type updater struct {
 	exe     string      // off the Mac: the binary to replace, "" when not writable
 	self    os.FileInfo // exe as this process started from it
 	retry   bool        // error: the download failed, and may be tried again
+	mirror  string      // error: the mirror the failed download came through (#893)
 	staged  string
 	asked   time.Time // when the feed was last asked, by the clock or a click
 	done    int64     // downloading: bytes so far, of total (0 when unknown)
@@ -65,6 +66,9 @@ type updateJSON struct {
 	URL     string `json:"url,omitempty"`
 	Stuck   string `json:"stuck,omitempty"` // available: why it can't update itself
 	Retry   bool   `json:"retry,omitempty"` // error: a click downloads it again
+	// error: the download failed through this mirror (Settings' UpdateMirror),
+	// and GitHub itself may do (#893)
+	Mirror string `json:"mirror,omitempty"`
 	Error   string `json:"error,omitempty"`
 	Done    int64  `json:"done,omitempty"` // downloading: bytes so far
 	Total   int64  `json:"total,omitempty"`
@@ -147,7 +151,7 @@ func (u *updater) begin() bool {
 	if u.state == "checking" || u.state == "downloading" {
 		return false
 	}
-	u.state, u.err, u.retry, u.asked = "checking", "", false, time.Now()
+	u.state, u.err, u.retry, u.mirror, u.asked = "checking", "", false, "", time.Now()
 	return true
 }
 
@@ -208,7 +212,7 @@ func (u *updater) run() {
 	u.mu.Lock()
 	if err != nil {
 		log.Println("update:", err)
-		u.state, u.err, u.retry = "error", err.Error(), true
+		u.state, u.err, u.retry, u.mirror = "error", err.Error(), true, update.MirrorOf(err)
 		return
 	}
 	u.state, u.staged = "ready", staged
@@ -281,6 +285,9 @@ func (u *updater) jsonIn(lang string) updateJSON {
 		}
 	}
 	j := updateJSON{State: u.state, Current: Version, Error: u.err, Retry: u.retry}
+	if u.state == "error" {
+		j.Mirror = u.mirror
+	}
 	if u.state == "checking" && u.staged != "" {
 		j.State = "ready" // what was downloaded can still be restarted into
 	}

@@ -222,6 +222,34 @@ func pluginAccountCatalog(pp plugin.Provider, key string) []catalog.Model {
 	return all
 }
 
+// PluginListError is why the plugin couldn't list the account at key's
+// models, "" when it did or kept the list it had: what it shows instead
+// is its short defaults (Cursor's Auto alone).
+func PluginListError(pp plugin.Provider, key string) string {
+	for _, a := range pp.Accounts {
+		if a.Key == key {
+			if a.FellBack {
+				return a.ListError
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+// ListError is why a plugin's account lists only the plugin's defaults,
+// "" for any other provider.
+func (p Provider) ListError() string {
+	if !p.IsPlugin() {
+		return ""
+	}
+	pp := *p.Account.plugin
+	if cur, ok := PluginOf(p.ID); ok {
+		pp = cur
+	}
+	return PluginListError(pp, p.Account.pluginKey)
+}
+
 // pluginLists is whether a plugin's account serves model, as the plugin
 // last told its list; one it told none of serves all of the provider's.
 func (a *Account) pluginLists(model string) bool {
@@ -270,6 +298,12 @@ func pluginProvider(pp plugin.Provider, l pluginLogin) Provider {
 		}
 		for _, cur := range ps {
 			if cur.ID == pp.ID {
+				// a Refresh that got the plugin's short defaults back says
+				// why, rather than "1 models" (gnayiab on X: Cursor in WSL
+				// listing Auto alone)
+				if e := PluginListError(cur, acct.Key); e != "" {
+					return nil, fmt.Errorf("%s couldn't list its models: %s", name, e)
+				}
 				return catalog.Chat(pluginAccountCatalog(cur, acct.Key)), nil
 			}
 		}

@@ -56,13 +56,21 @@ func (s *Server) retrieve(path, operation string) http.HandlerFunc {
 			s.record(call)
 			return
 		}
+		g, ms, isGroup := provider.FindGroup(asked)
+		if keyWho, held := keyHolds(r); held && (isGroup && !groupAllowed(keyWho, g, ms) || !isGroup && !modelAllowed(keyWho, p, model)) {
+			msg := keyModelError(keyWho, asked)
+			call.Status, call.Error = 403, msg
+			writeError(w, provider.Chat, 403, msg)
+			s.record(call)
+			return
+		}
 		call.To = provider.Chat
 		// a routing group's members are tried as its routing orders them,
 		// each account or key of theirs too (#773), the next asked when one
 		// fails: a member that serves no such API (404), one out of quota
 		// (429) or one whose vendor fails; a model is asked on its own
 		tries := []candidate{{p: p, model: model}}
-		if g, ms, isGroup := provider.FindGroup(asked); isGroup {
+		if isGroup {
 			if cs, _ := s.planGroup(g.Live(), ms, provider.Chat); len(cs) > 0 {
 				tries = cs
 			}

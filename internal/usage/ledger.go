@@ -516,8 +516,14 @@ func (t *Totals) addRow(r Row) {
 }
 
 // Dimensions are what calls are told apart by: the provider they went to,
-// the agent that made them, the model.
-var Dimensions = []string{"provider", "agent", "model"}
+// the agent that made them, the model, and the model at the provider it
+// went to ("modelAt"), so one model's speed at each provider can be compared
+// (inaction on Discord).
+var Dimensions = []string{"provider", "agent", "model", "modelAt"}
+
+// ModelAtKey is a call's "modelAt": its provider's id and its model, as
+// "provider/model" (a provider's id has no "/").
+func ModelAtKey(provider, model string) string { return provider + "/" + model }
 
 // key is the row's part of a dimension: its provider's id, its agent, its model.
 func (r Row) key(by string) string {
@@ -526,6 +532,8 @@ func (r Row) key(by string) string {
 		return r.Provider
 	case "agent":
 		return r.Agent
+	case "modelAt":
+		return ModelAtKey(r.Provider, r.Model)
 	case "computer":
 		if r.Computer == "" {
 			return ThisComputer
@@ -533,6 +541,23 @@ func (r Row) key(by string) string {
 		return r.Computer
 	}
 	return r.Model
+}
+
+// keyer is Row.key for many rows, made once for each provider and model:
+// a "modelAt" is a string built of two, which a page of thousands of rows
+// would otherwise build again for each.
+type keyer map[[2]string]string
+
+func (m keyer) key(r Row, by string) string {
+	if by != "modelAt" {
+		return r.key(by)
+	}
+	k, ok := m[[2]string{r.Provider, r.Model}]
+	if !ok {
+		k = r.key(by)
+		m[[2]string{r.Provider, r.Model}] = k
+	}
+	return k
 }
 
 // AllTokens is what went in and out and through the cache.
@@ -549,11 +574,12 @@ type Share struct {
 func Breakdown(rows []Row, by string) []Share {
 	at := map[string]*Share{}
 	var out []*Share
+	keys := keyer{}
 	for _, r := range rows {
 		if r.IsRejected() {
 			continue
 		}
-		k := r.key(by)
+		k := keys.key(r, by)
 		s := at[k]
 		if s == nil {
 			s = &Share{ID: k}
@@ -642,6 +668,7 @@ func LedgerSeries(p Period, rows []Row) (bucket string, pts []SeriesPoint) {
 		}
 	}
 	kept := map[string]map[string]bool{}
+	keys := keyer{}
 	for _, d := range Dimensions {
 		kept[d] = map[string]bool{}
 		for i, s := range Breakdown(rows, d) {
@@ -664,7 +691,7 @@ func LedgerSeries(p Period, rows []Row) (bucket string, pts []SeriesPoint) {
 		}
 		pts[i].addRow(r)
 		for _, d := range Dimensions {
-			if k := r.key(d); kept[d][k] {
+			if k := keys.key(r, d); kept[d][k] {
 				part := pts[i].By[d][k]
 				part.add(r)
 				pts[i].By[d][k] = part

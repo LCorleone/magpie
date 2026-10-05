@@ -77,10 +77,25 @@ func balanceSourceOf(p Provider) (balanceSource, bool) {
 // balancePathOf is the balance field of a provider that named its Balance
 // URL.
 func balancePathOf(p Provider) string {
-	if strings.TrimSpace(p.BalancePath) == "" && balanceURLPath(p.BalanceURL) == newAPIUserSelf {
-		// new-api's account query with its field left out: the quota,
-		// in new-api's units, as it reports it
+	if strings.TrimSpace(p.BalancePath) != "" {
+		return p.BalancePath
+	}
+	// a query whose reply is known, with its field left out (#881)
+	switch path := balanceURLPath(p.BalanceURL); {
+	case path == newAPIUserSelf:
+		// new-api's account query: the quota, in new-api's units, as it
+		// reports it
 		return newAPIQuotaPath
+	case path == newAPIKeyUsage:
+		// new-api's (and one-api's) query for a key: what is left on it,
+		// in the same units
+		return newAPIKeyPath
+	case path == sub2APIProfile:
+		// a sub2api panel's profile, asked with its login JWT: dollars
+		return "$data.balance"
+	case strings.HasSuffix(path, creditGrants):
+		// OpenAI's old credit query, which relays still answer: dollars
+		return "$total_available"
 	}
 	return p.BalancePath
 }
@@ -93,6 +108,12 @@ const (
 	newAPIKeyUsage  = "/api/usage/token"
 	newAPIUserSelf  = "/api/user/self"
 	newAPIQuotaPath = "$data.quota / 500000"
+	newAPIKeyPath   = "$data.total_available / 500000"
+	// creditGrants is OpenAI's old query for what is left on an account,
+	// {"total_granted":…,"total_used":…,"total_available":…} in dollars
+	creditGrants = "/dashboard/billing/credit_grants"
+	// sub2APIProfile is a sub2api panel's account, told to its login JWT
+	sub2APIProfile = "/api/v1/user/profile"
 )
 
 // balanceURLPath is a balance URL's path, without a slash at its end.
@@ -773,7 +794,7 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 			continue
 		}
 		src, ok := balanceSourceOf(p)
-		if !ok {
+		if !ok && !clineKeyCard(p) {
 			continue
 		}
 		others := 0
@@ -817,6 +838,19 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 		go func() {
 			defer wg.Done()
 			q := SubscriptionQuota{Provider: j.p.ID, Name: j.p.Name, Icon: j.p.Icon, User: j.user, Windows: []QuotaWindow{}}
+			if clineKeyCard(j.p) {
+				// ClinePass's limits beside the credits (cline_usage.go)
+				if ws, amount, err := clineKeyUsage(ctx, j.p); err != nil {
+					q.Error = err.Error()
+				} else {
+					q.Windows = append(q.Windows, ws...)
+					q.Balance = amount
+					now := time.Now()
+					q.ReadAt = &now
+				}
+				out[i] = keepReading(ctx, q, keyTag("balance", j.p.Key))
+				return
+			}
 			amount, parts, _, err := balanceParts(ctx, j.p)
 			if err != nil {
 				q.Error = err.Error()

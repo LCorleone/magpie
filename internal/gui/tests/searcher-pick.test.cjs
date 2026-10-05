@@ -4,6 +4,9 @@
 // is named; the picker offers Automatic, each provider that can search by
 // its small model, and each of its models, including a relay said to search;
 // a pick is saved as searcher ("<provider>" or "<provider>/<model>") and shown;
+// a provider's small model is offered once, not again among its models, and
+// one saved by name is ticked as it (Player on Discord); no "via magpie" tag,
+// as no agent asks for these;
 // one named that magpie can't use (turned off) is said in the row, magpie's pick shown instead;
 // relays said to search are manual-only, including during fallback; a Kimi Code plan, which
 // searches by its web search with no model, is offered by itself and said to search for its
@@ -146,6 +149,12 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert(items[0].includes(w.auto), "Automatic comes first");
       assert(items.some((x) => x.includes("GPT Five Five")) && items.some((x) => x.includes("Claude Opus 4.5")));
       assert(items.some((x) => x.includes("MyRelay")), "a relay said to search can be named");
+      // the small model once: GPT-5 mini is OpenAI's, Claude Haiku 4.5 Claude's and MyRelay's
+      assert.equal(items.filter((x) => x.includes("GPT-5 mini") || x.includes("GPT-5 Mini Named")).length, 1, items.join(" | "));
+      assert.equal(items.filter((x) => x.includes("MyRelay")).length, 1, items.join(" | "));
+      assert.equal(items.filter((x) => x.includes("Claude Haiku 4.5")).length, 0, "Claude's and MyRelay's small model only as their small model");
+      assert.equal(items.filter((x) => x.startsWith("claude-haiku-4-5")).length, 2, items.join(" | "));
+      assert.equal(await page.locator("#list .badge.path").count(), 0, "no agent asks for these: no via magpie");
       await click(page.locator("#list li:not(.group)", { hasText: "GPT Five Five" }));
       await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText.includes("GPT Five Five"));
       assert.equal(posted.at(-1).searcher, "openai/gpt-5.5");
@@ -158,14 +167,25 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText === "OpenAI · GPT-5 Mini Named");
       assert.equal(posted.at(-1).searcher, "openai");
 
+      // a small model saved by name ("<provider>/<small>", as the model row
+      // below it once saved) is ticked as the small model, and shown by name
+      st.searcher = "openai/gpt-5-mini";
+      await page.evaluate(() => fetch("/api/settings").then((r) => r.json()).then((s) => { prefs = s; state.settings = s; renderSettings(); }));
+      await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText === "GPT-5 mini · OpenAI");
+      await click(row.locator("button.searcher-pick"));
+      await page.locator("#pop").waitFor({ state: "visible" });
+      assert.deepEqual(await page.locator("#list li.cur").allInnerTexts().then((x) => x.map((s) => s.includes(w.small))), [true]);
+      await page.keyboard.press("Escape");
+      await page.locator("#pop").waitFor({ state: "hidden" });
+
       // Manual-only is not unavailable: selecting a relay still saves and uses it.
       await click(row.locator("button.searcher-pick"));
       await page.locator("#pop").waitFor({ state: "visible" });
       const relay = page.locator("#list li:not(.group)", { hasText: "MyRelay" }).last();
       await relay.scrollIntoViewIfNeeded();
       await click(relay);
-      await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText === "Claude Haiku 4.5 · MyRelay");
-      assert.equal(posted.at(-1).searcher, "relay/claude-haiku-4-5");
+      await page.waitForFunction(() => document.querySelector("#searchList button.searcher-pick")?.innerText === "MyRelay · claude-haiku-4-5");
+      assert.equal(posted.at(-1).searcher, "relay");
       assert.equal(await row.locator(".searcher-relays").innerText(), h.relays);
 
       // a Kimi Code plan, by its web search: no model of it is offered

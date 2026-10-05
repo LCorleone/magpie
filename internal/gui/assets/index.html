@@ -167,8 +167,7 @@
         <div class="led-bar">
           <div class="segs" id="ledMetric"></div>
           <span class="grow"></span>
-          <span class="led-by" data-t>Split by</span>
-          <div class="segs" id="ledSplit"></div>
+          <span class="led-split"><span class="led-by" data-t>Split by</span><span class="segs" id="ledSplit"></span></span>
         </div>
         <div class="led-body">
           <div class="led-chart" id="ledChart"></div>
@@ -237,6 +236,10 @@
       <div class="row pref">
         <div class="who"><div class="name" data-t>Language</div><div class="sub" data-t>Applies at once, no restart</div></div>
         <div id="langSegs"></div>
+      </div>
+      <div class="row pref" id="gatewayModeRow" hidden>
+        <div class="who"><div class="name" data-t>Gateway mode</div><div class="sub" id="gatewayModeSub"></div></div>
+        <div id="gatewayModeSegs"></div>
       </div>
       <div class="row pref" id="textSizeRow">
         <div class="who"><div class="name" data-t>Text size</div><div class="sub" id="textSizeSub"></div></div>

@@ -218,7 +218,7 @@ func buildChat(r *Request, model, host string, rejectTemp bool) []byte {
 			seen = nil
 		}
 	}
-	for _, m := range r.Messages {
+	for i, m := range r.Messages {
 		if m.Role == "assistant" {
 			showSeen()
 			am := map[string]any{"role": "assistant"}
@@ -261,7 +261,24 @@ func buildChat(r *Request, model, host string, rejectTemp bool) []byte {
 			if len(calls) > 0 {
 				am["tool_calls"] = calls
 			}
-			if replay && think != "" {
+			// a reply cut short and sent back to go on from (Resume) is marked
+			// with the upstream's own prefill mode — DeepSeek's prefix, Kimi's
+			// partial (continuation.go; an upstream without one is never asked
+			// to go on) — and its reasoning goes with it where the upstream
+			// reads reasoning_content back, so the going on picks the thought
+			// up where it was cut
+			if r.Resume && i == len(r.Messages)-1 {
+				mode := chatPrefill(host, model)
+				switch mode {
+				case "prefix":
+					am["prefix"] = true
+				case "partial":
+					am["partial"] = true
+				}
+				if think != "" && mode != "" {
+					am["reasoning_content"] = think
+				}
+			} else if think != "" && replay {
 				am["reasoning_content"] = think
 			}
 			msgs = append(msgs, am)

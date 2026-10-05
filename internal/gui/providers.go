@@ -136,6 +136,13 @@ type providerJSON struct {
 	// when the user set none (provider.Concurrency)
 	MaxConcurrency    *int `json:"maxConcurrency"`
 	PluginConcurrency int  `json:"pluginConcurrency,omitempty"`
+	// each key's or account's own limit over it (#892), by its name in
+	// lower case or its key id; 0 there is none
+	AccountConcurrency map[string]int `json:"accountConcurrency,omitempty"`
+	// how many may wait for each key or account, and for how many seconds
+	// (0: no bound)
+	QueueLimit int `json:"queueLimit,omitempty"`
+	QueueWait  int `json:"queueWait,omitempty"`
 	// what it charges against the official price, 0 for that (#819)
 	PriceRate float64     `json:"priceRate,omitempty"`
 	Models    []modelJSON `json:"models"`            // everything the vendor lists, exposed ones flagged
@@ -146,16 +153,19 @@ type providerJSON struct {
 	// Groups are the routing groups ("group/<id>") each of its models is
 	// in, by model id: what an unlisted one is still used through, and the
 	// editor names those in none
-	Groups    map[string][]string `json:"groups,omitempty"`
-	Off       bool                `json:"off"`                // switched off: kept, but agents get none of its models
-	Contexts  map[string]int      `json:"contexts,omitempty"` // the windows the user set, "*" for all its models
-	Outputs   map[string]int      `json:"outputs,omitempty"`  // the reply limits the user set (provider.OutputsOf)
-	Compacts  map[string]int      `json:"compacts,omitempty"` // where Codex and Claude Code compact on its models (provider.CompactsOf)
-	Fetched   *time.Time          `json:"fetched,omitempty"`  // when the list came from the vendor; the page says how long ago in its language
-	Agents    []providerAgent     `json:"agents"`             // detected agents, current ones flagged
-	Sponsored bool                `json:"sponsored"`
-	KeyList   []provider.KeyInfo  `json:"keyList"`           // its keys, in the order requests try them
-	Account   *accountJSON        `json:"account,omitempty"` // a signed-in agent, see provider.Account
+	Groups   map[string][]string `json:"groups,omitempty"`
+	Off      bool                `json:"off"`                // switched off: kept, but agents get none of its models
+	Contexts map[string]int      `json:"contexts,omitempty"` // the windows the user set, "*" for all its models
+	Outputs  map[string]int      `json:"outputs,omitempty"`  // the reply limits the user set (provider.OutputsOf)
+	Compacts map[string]int      `json:"compacts,omitempty"` // where Codex and Claude Code compact on its models (provider.CompactsOf)
+	Fetched  *time.Time          `json:"fetched,omitempty"`  // when the list came from the vendor; the page says how long ago in its language
+	// ListError is why a plugin's account has only the plugin's defaults
+	// (provider.ListError): the editor says so under its models
+	ListError string             `json:"listError,omitempty"`
+	Agents    []providerAgent    `json:"agents"` // detected agents, current ones flagged
+	Sponsored bool               `json:"sponsored"`
+	KeyList   []provider.KeyInfo `json:"keyList"`           // its keys, in the order requests try them
+	Account   *accountJSON       `json:"account,omitempty"` // a signed-in agent, see provider.Account
 	// Move is where a built-in subscription stands with the community
 	// plugin that can run it (provider.Move): set for those that have one
 	Move *moveJSON `json:"move,omitempty"`
@@ -280,8 +290,12 @@ type gatewayJSON struct {
 	Older   bool           `json:"older,omitempty"`
 	Models  int            `json:"models"`
 	Calls   []gateway.Call `json:"calls"`
-	Groups  []gwGroupJSON  `json:"groups"`  // the catalog's routing groups, listed before the models
-	Archive archiveJSON    `json:"archive"` // the request archive's switch, and where it goes
+	// Lanes are the keys and accounts with requests out or waiting under
+	// a limit on requests at once (#892), by provider#keyid or
+	// provider@account
+	Lanes   map[string]gateway.Lane `json:"lanes,omitempty"`
+	Groups  []gwGroupJSON           `json:"groups"`  // the catalog's routing groups, listed before the models
+	Archive archiveJSON             `json:"archive"` // the request archive's switch, and where it goes
 }
 
 // gwGroupJSON is a routing group as the Gateway view lists it.
@@ -386,6 +400,7 @@ func providerInfo(p provider.Provider, agents []agentUse) providerJSON {
 		Ready: p.Ready(), Chosen: p.Models, Models: []modelJSON{}, Agents: []providerAgent{},
 		Fallback: p.Fallback, Routing: p.Routing, Sink: p.Sink, Affinity: p.Affinity, KeepLogin: p.KeepLogin, KeepLoginAs: p.KeepLoginAs, Unlisted: p.Unlisted, Off: p.Off, Contexts: p.Contexts,
 		MaxConcurrency: p.MaxConcurrency, PluginConcurrency: p.PluginConcurrency(), PriceRate: p.PriceRate,
+		AccountConcurrency: p.AccountConcurrency, QueueLimit: p.QueueLimit, QueueWait: p.QueueWait,
 		Outputs: provider.OutputsOf(p.ID), Compacts: provider.CompactsOf(p.ID),
 	}
 	if out.Fallback == nil {
@@ -544,6 +559,7 @@ func providerInfo(p provider.Provider, agents []agentUse) providerJSON {
 	if t, ok := p.Listed(); ok {
 		out.Fetched = &t
 	}
+	out.ListError = p.ListError()
 	for _, a := range agents {
 		pa := providerAgent{ID: a.ID, Name: a.Name, Icon: a.Icon, Current: a.pid == p.ID, Model: a.model}
 		if a.inGroup {
@@ -633,6 +649,7 @@ func providersState() providersJSON {
 	if gw := served.Load(); gw != nil {
 		s.Gateway.Running, s.Gateway.Mine, s.Gateway.Window = true, true, true
 		s.Gateway.Calls = gw.Recent()
+		s.Gateway.Lanes = gw.Lanes()
 	} else {
 		o := gateway.ServedBy()
 		s.Gateway.Running, s.Gateway.Window, s.Gateway.Version = o.Running, o.Window, o.Version
@@ -673,6 +690,16 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 	pluginRoutes(mux, w)
 	traceRoutes(mux)
 	groupRoutes(mux)
+	// how each key's or account's requests stand under its limit on
+	// requests at once (#892), read every two seconds while a provider's
+	// rows are shown; empty when the gateway runs elsewhere
+	mux.HandleFunc("GET /api/lanes", func(rw http.ResponseWriter, r *http.Request) {
+		lanes := map[string]gateway.Lane{}
+		if gw := served.Load(); gw != nil {
+			lanes = gw.Lanes()
+		}
+		writeJSON(rw, lanes)
+	})
 	mux.HandleFunc("GET /api/providers", func(rw http.ResponseWriter, r *http.Request) {
 		// ?wait: an account just signed in opens in the editor with its
 		// vendor's list, worth the wait there (#204)
@@ -759,6 +786,14 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			// accounts has out at once: a number (0 none), null for what
 			// its plugin says or none; a save that leaves it out keeps it
 			MaxConcurrency json.RawMessage `json:"maxConcurrency"`
+			// QueueLimit and QueueWait are how many may wait for each key
+			// or account and for how many seconds (#892): numbers, 0 or
+			// null for no bound; a save that leaves them out keeps them
+			QueueLimit json.RawMessage `json:"queueLimit"`
+			QueueWait  json.RawMessage `json:"queueWait"`
+			// Limit, for accountconcurrency: the account's or key's own
+			// limit, 0 for none, null for the provider's (#892)
+			Limit *int `json:"limit"`
 			// PriceRate is what it charges against the official price
 			// (#819): a number, null or 0 for none; left out, it is kept
 			PriceRate    json.RawMessage `json:"priceRate"`
@@ -924,6 +959,21 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				return
 			}
 			in.MaxConcurrency = cc
+			ql, keepQL, err := queueOf(req.QueueLimit, "queue length")
+			if err != nil {
+				fail(rw, err)
+				return
+			}
+			qw, keepQW, err := queueOf(req.QueueWait, "queue wait")
+			if err != nil {
+				fail(rw, err)
+				return
+			}
+			if err := provider.CheckQueue(ql, qw); err != nil {
+				fail(rw, err)
+				return
+			}
+			in.QueueLimit, in.QueueWait = ql, qw
 			rate, keepRate, err := priceRateOf(req.PriceRate)
 			if err != nil {
 				fail(rw, err)
@@ -967,6 +1017,12 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				if keepCC && old != nil {
 					in.MaxConcurrency = old.MaxConcurrency
 				}
+				if keepQL && old != nil {
+					in.QueueLimit = old.QueueLimit
+				}
+				if keepQW && old != nil {
+					in.QueueWait = old.QueueWait
+				}
 				if keepRate && old != nil {
 					in.PriceRate = old.PriceRate
 				}
@@ -979,9 +1035,11 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				if old != nil {
 					in.AccountModels = old.AccountModels
 				}
-				// and their usage caps, with accountcap
+				// and their usage caps, with accountcap, and their limits on
+				// requests at once, with accountconcurrency
 				if old != nil {
 					in.AccountCaps = old.AccountCaps
+					in.AccountConcurrency = old.AccountConcurrency
 				}
 				// a Zhipu key's team likewise: {} clears it
 				if in.ZhipuTeam == nil && old != nil {
@@ -1100,6 +1158,11 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			}
 		case "accountcap":
 			if err := provider.SetAccountCap(in.ID, req.Account, req.Cap); err != nil {
+				fail(rw, err)
+				return
+			}
+		case "accountconcurrency":
+			if err := provider.SetAccountConcurrency(in.ID, req.Account, req.Limit); err != nil {
 				fail(rw, err)
 				return
 			}
@@ -1595,6 +1658,22 @@ func typed(p, in provider.Provider, proxy *string) provider.Provider {
 		p.Proxy = *proxy
 	}
 	return p
+}
+
+// queueOf is a save's queueLimit or queueWait: keep when the save left it
+// out, 0 for null, else the number.
+func queueOf(raw json.RawMessage, what string) (n int, keep bool, err error) {
+	if len(raw) == 0 {
+		return 0, true, nil
+	}
+	var v *int
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return 0, false, fmt.Errorf("the %s must be a whole number, not %s", what, raw)
+	}
+	if v == nil {
+		return 0, false, nil
+	}
+	return *v, false, nil
 }
 
 // priceRateOf is a save's priceRate: keep when the save left it out, 0

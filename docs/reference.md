@@ -182,6 +182,13 @@ its provider there (`Claude Sonnet 5 · Relay A · office`) — the ids stay ids
 (`office/relay-a/claude-sonnet-5`), only these labels carry the names — and its image
 models are listed under Settings → Images and draw through it.
 
+Codex's native image tool first asks the provider that served its conversation
+turn for the requested image model. If that provider does not list the model,
+or the turn cannot be identified, it uses Settings → Images → Image generation
+(including Automatic). Off disables this fallback, not a matching model on the
+turn's provider. An explicit `provider/model` keeps its destination; an upstream
+image error does not retry through the setting. Magpie Image MCP is not required.
+
 WorkBuddy (China)'s daily check-in (签到) is pressed from the app's Usage card
 (*Check in now*), `magpie accounts checkin`, or `c` on the TUI's Usage page,
 which checks in every account signed in on this computer at once; its
@@ -210,6 +217,8 @@ magpie gateway-key remove <id>         # revokes remote access
 magpie gateway-key limit <id> week --tokens 2m --cost 5   # its own limit
 magpie gateway-key limit <id>          # limit, used, left and reset
 magpie gateway-key limit <id> off      # no limit
+magpie gateway-key models <id> openai/gpt-5 anthropic/*   # only these models
+magpie gateway-key models <id> all     # every model
 ```
 
 Each gateway key can have its own **limit**: a token total, an estimated
@@ -230,6 +239,19 @@ streamed reply is settled when it ends with the usage its vendor reported.
 A key can read its own status with `GET /v1/magpie/limit`. Requests from
 this computer that send no gateway key are not limited; a gateway key used
 from this computer is.
+
+A gateway key can also be held to some **models** (#882): pick them with the
+**All models** badge on the key's row, or run `magpie gateway-key models <id>
+openai/gpt-5 anthropic/*` (`all` takes the restriction off). A pattern is
+`<provider>/<model>` or `<provider>/*`, matched against the provider that
+serves the call, so a bare model name is resolved first, or a routing group,
+`group/<id>` (`group/*` for every group). A key that names a group may use
+the group with every member in it, though not those members asked for by
+name. Such a key sees only its models in `/v1/models` and the Anthropic and
+Gemini lists, a routing group it doesn't name only when it may use every
+member, and is refused any other model with a 403 in the API's error shape
+before a provider is asked; a fallback it may not use is skipped. A key with
+no models listed may use every model.
 
 While LAN sharing is enabled, remote requests require an enabled gateway key
 sent as Bearer, `x-api-key`, `x-goog-api-key` or `?key=`. Loopback remains
@@ -853,6 +875,16 @@ key. See [Connecting anything else](#connecting-anything-else) for the
 protocol-specific base URLs. Keep `3425` behind a firewall or VPN and do not
 expose it publicly without gateway-key authentication.
 
+Such a page is in **gateway mode**: it shows Providers, Gateway, Routing,
+Usage, Plugins and Settings, with no Agents, Sessions or Library tab, and
+Settings leaves out what is written into this machine's agents (provider in
+model names, Codex subagents, long conversations, Codex thread titles) and
+the desktop's alerts and tray. `magpie web` is in it by itself when it finds
+no agents on its machine, as in the container, and with
+`magpie web --gateway`. *Settings › General › Gateway mode* picks Automatic,
+On or Off for this machine (it wins over both); Off brings every page back.
+The app's own window is never in gateway mode.
+
 For a bind-mounted configuration directory, the directory must be writable by
 the non-root container user (uid 65532):
 
@@ -915,7 +947,7 @@ gateway translates.
 magpie                          # open the app: a window plus the menu bar icon
 magpie tray                     # menu bar icon only (use this in your login items)
 magpie tui                      # the same thing, in the terminal
-magpie web                      # the app's window in a browser (WSL, a server over SSH); --lan, --addr, --no-open
+magpie web                      # the app's window in a browser (WSL, a server over SSH); --lan, --addr, --no-open, --gateway
                                 # (a new key each run; MAGPIE_WEB_KEY keeps one, for a page run as a service)
 magpie ls                       # list every agent and its current settings
 magpie claude opus              # set a model (agent names accept prefixes: cc, oc, gem …)

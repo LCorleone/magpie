@@ -746,6 +746,7 @@ func buildRequestBlocks(p Period, f Filter, offset, limit int, gateways, chunks,
 	groups := map[string]map[string]*Share{}
 	chartGroups := map[string]map[string]*Share{}
 	seriesGroups := map[string]map[string]*Share{}
+	keys := keyer{}
 	for _, d := range Dimensions {
 		groups[d] = map[string]*Share{}
 		chartGroups[d] = map[string]*Share{}
@@ -791,7 +792,7 @@ func buildRequestBlocks(p Period, f Filter, offset, limit int, gateways, chunks,
 		}
 		if keep || f.Day != "" && chartFilter.keeps(r.Record) {
 			for _, d := range Dimensions {
-				k := r.key(d)
+				k := keys.key(r, d)
 				s := seriesGroups[d][k]
 				if s == nil {
 					s = &Share{ID: k}
@@ -822,13 +823,16 @@ func buildRequestBlocks(p Period, f Filter, offset, limit int, gateways, chunks,
 			if d == "agent" {
 				g.Agent = ""
 			}
-			if d == "model" {
+			if d == "model" || d == "modelAt" {
 				g.Model = ""
+			}
+			if d == "modelAt" {
+				g.Provider = ""
 			}
 			if f.Day != "" {
 				g.Day = ""
 				if g.keeps(r.Record) {
-					k := r.key(d)
+					k := keys.key(r, d)
 					if chartGroups[d][k] == nil {
 						chartGroups[d][k] = &Share{ID: k}
 					}
@@ -839,7 +843,7 @@ func buildRequestBlocks(p Period, f Filter, offset, limit int, gateways, chunks,
 			if !g.keeps(r.Record) {
 				continue
 			}
-			k := r.key(d)
+			k := keys.key(r, d)
 			s := groups[d][k]
 			if s == nil {
 				s = &Share{ID: k}
@@ -909,7 +913,7 @@ func buildRequestBlocks(p Period, f Filter, offset, limit int, gateways, chunks,
 		pt := &out.Series[i]
 		pt.addRow(r)
 		for _, d := range Dimensions {
-			k := r.key(d)
+			k := keys.key(r, d)
 			part := pt.By[d][k]
 			part.add(r)
 			pt.By[d][k] = part
@@ -967,8 +971,11 @@ func pageFromLedger(p Period, f Filter, offset, limit int, all Ledgered) Request
 		if d == "agent" {
 			g.Agent = ""
 		}
-		if d == "model" {
+		if d == "model" || d == "modelAt" {
 			g.Model = ""
+		}
+		if d == "modelAt" {
+			g.Provider = ""
 		}
 		out.By[d] = Breakdown(all.Filtered(g).Rows, d)
 		if f.Day != "" {

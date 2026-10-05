@@ -81,11 +81,21 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(await boxes("model-1").evaluateAll((is) => is.map((i) => i.value)), ["1.25", "8", "0.125", "0"]);
       await row("model-2").getByRole("button", { name: L.reset }).click();
       assert.deepEqual(await boxes("model-2").evaluateAll((is) => is.map((i) => i.value)), ["", "", "", ""]);
-      // no list price: input and output must be given
+      // no list price: input and output must be given, one box at a time —
+      // the part typed stays (PAMI on Discord: it was emptied, so no price
+      // could be set), and a Save before the other part asks for it
       await row("model-3").getByRole("spinbutton", { name: L.input, exact: true }).fill("3");
       await row("model-3").getByRole("spinbutton", { name: L.input, exact: true }).press("Enter");
       await page.locator("#status", { hasText: L.nolist }).waitFor();
-      assert.equal(await row("model-3").getByText(L.unsaved, { exact: true }).isVisible(), false);
+      assert.deepEqual(await boxes("model-3").evaluateAll((is) => is.map((i) => i.value)), ["3", "", "", ""]);
+      assert(await row("model-3").getByText(L.unsaved, { exact: true }).isVisible());
+      await page.getByRole("button", { name: L.save, exact: true }).click();
+      await page.locator(".editor-error", { hasText: L.nolist }).waitFor();
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), L.output);
+      assert.deepEqual(posts, [], "a price half given isn't sent");
+      await row("model-3").getByRole("spinbutton", { name: L.output, exact: true }).fill("15");
+      await row("model-3").getByRole("spinbutton", { name: L.output, exact: true }).press("Enter");
+      assert.deepEqual(await boxes("model-3").evaluateAll((is) => is.map((i) => i.value)), ["3", "15", "0", "0"]);
       assert.equal(await page.evaluate(() => scrollY), y, "nothing scrolled the page");
       assert.deepEqual(posts, [], "nothing is sent before the Save");
       if (process.env.ARTIFACT_DIR) await page.locator(".mnames").screenshot({ path: path.join(process.env.ARTIFACT_DIR, `${engine}-${lang}-model-price-rows.png`) });
@@ -96,6 +106,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(posts[0].body.modelPrefs, {
         "model-1": { price: { input: 1.25, output: 8, cache_read: 0.125, cache_write: 0 } },
         "model-2": { ownPrice: true },
+        "model-3": { price: { input: 3, output: 15, cache_read: 0, cache_write: 0 } },
       });
       const missing = await page.evaluate(() => ["Price, $ / 1M tokens", "{id} has no list price: give its input and output prices", "A price is a number of dollars, 0 or more"]
         .filter((k) => !I18N.zh[k] || !I18N.ja[k] || !I18N.de[k]));

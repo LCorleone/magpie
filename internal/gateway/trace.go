@@ -24,6 +24,9 @@ const traceKeep = 60
 
 // Route is one request's way through routing.
 type Route struct {
+	imageTurn     string
+	imageCaller   string
+	imageProvider string
 	Seq           int64        `json:"seq"` // the trace's count when it last changed
 	ID            int64        `json:"id"`
 	Time          time.Time    `json:"time"`

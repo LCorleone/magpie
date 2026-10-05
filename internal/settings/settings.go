@@ -198,6 +198,11 @@ type Settings struct {
 	// again when it is opened (#580): less memory, a moment's wait. This
 	// computer's own (KeepOwn).
 	Lightweight bool `json:"lightweight,omitempty"`
+	// GatewayMode is whether `magpie web` shows only what a gateway serving
+	// other machines needs (Player on Discord): "on", "off", or "" to
+	// decide by itself — on for `magpie web --gateway`, or with no agents
+	// on this machine. This computer's own (KeepOwn).
+	GatewayMode string `json:"gatewayMode,omitempty"`
 	// QuotaLeft shows a subscription's windows by how much of each is left,
 	// not used: the Usage page, the tray panel and the menu bar alike.
 	QuotaLeft bool `json:"quotaLeft,omitempty"`
@@ -572,12 +577,13 @@ func (s Settings) Compact() int {
 
 // KeepOwn puts back cur's settings that are this computer's own, which a
 // sync or a restored backup never brings from another: the window's size,
-// the proxy, the gateway's port, the Dock, and what the menu bar or tray shows beside magpie's
+// the proxy, the gateway's port, the Dock, gateway mode, and what the menu bar or tray shows beside magpie's
 // icon (yoooo on Discord: usage turned off on a Mac came back from a
 // Windows box that shows it).
 func (s *Settings) KeepOwn(cur Settings) {
 	s.Window, s.Proxy, s.Port, s.Dock, s.DockWindow, s.Lightweight = cur.Window, cur.Proxy, cur.Port, cur.Dock, cur.DockWindow, cur.Lightweight
 	s.TrayUsages, s.TrayUsage, s.TrayUsageEvery, s.TrayNoLogos, s.TrayNoBird = cur.TrayUsages, cur.TrayUsage, cur.TrayUsageEvery, cur.TrayNoLogos, cur.TrayNoBird
+	s.GatewayMode = cur.GatewayMode
 }
 
 // RenamePerModel moves what the user said of a provider's models to the id

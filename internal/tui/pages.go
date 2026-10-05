@@ -498,6 +498,9 @@ func endpointAsk(pr provider.PresetDef, crumbs []string, now string, then func(s
 		}}
 }
 
+// listError is provider.Provider.ListError; tests stand in for it.
+var listError = provider.Provider.ListError
+
 func (m model) viewProviders() string {
 	var b strings.Builder
 	b.WriteString(m.header())
@@ -511,7 +514,7 @@ func (m model) viewProviders() string {
 		}
 		return b.String()
 	}
-	type row struct{ name, id, key, models, note string }
+	type row struct{ name, id, key, models, note, warn string }
 	var rows []row
 	var w [4]int
 	for _, p := range m.provs {
@@ -540,6 +543,12 @@ func (m model) viewProviders() string {
 			notes = append(notes, "groups only")
 		}
 		r.note = strings.Join(notes, " · ")
+		// a plugin's account showing its defaults alone says why, as the
+		// app's editor does (gnayiab on X: Cursor in WSL's TUI had Auto
+		// alone and nothing said)
+		if e := listError(p); e != "" {
+			r.warn = "couldn't list its models: " + e
+		}
 		for i, s := range []string{r.name, r.id, r.key, r.models} {
 			w[i] = max(w[i], lipgloss.Width(s))
 		}
@@ -560,7 +569,14 @@ func (m model) viewProviders() string {
 		if strings.HasPrefix(r.key, "○") {
 			key = sBad.Render(padRight(r.key, w[2]))
 		}
-		b.WriteString(pad + marker + name + "  " + sFaint.Render(padRight(r.id, w[1])) + "  " + key + "  " + sText.Render(padRight(r.models, w[3])) + "  " + sMuted.Render(r.note) + "\n")
+		line := pad + marker + name + "  " + sFaint.Render(padRight(r.id, w[1])) + "  " + key + "  " + sText.Render(padRight(r.models, w[3])) + "  " + sMuted.Render(r.note)
+		if r.warn != "" {
+			if r.note != "" {
+				line += sMuted.Render(" · ")
+			}
+			line += sBad.Render(r.warn)
+		}
+		b.WriteString(line + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

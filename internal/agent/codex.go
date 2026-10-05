@@ -149,6 +149,14 @@ func codexIn(at place) *Agent {
 			edit.KV{Path: "base_url", Value: at.v1()},
 			edit.KV{Path: "wire_api", Value: "responses"},
 			edit.KV{Path: "experimental_bearer_token", Value: at.gwKey()},
+			// Codex offers its built-in image tool (image_gen.imagegen) and
+			// the other OpenAI-provider tools only to a provider it reads as
+			// the OpenAI actor: one that does not require OpenAI auth but
+			// carries x-openai-actor-authorization. Without this header the
+			// model is never given the tool, so a Codex on magpie can't draw
+			// (the request that names model/draws never happens at all).
+			// uses_openai_actor_authorization() is exactly this check.
+			edit.KV{Path: "http_headers", Value: edit.Raw(`{ "x-openai-actor-authorization" = "magpie" }`)},
 		)
 	}
 	hasProvider := func() bool {
@@ -277,7 +285,31 @@ func codexIn(at place) *Agent {
 		agents, err := edit.GetTOMLTable(path, "agents")
 		return agents["default_subagent_model"], err
 	}
+	// the model Codex writes its memories with (Yc on Discord): [memories]
+	// extract_model summarises a thread, consolidation_model folds them in
+	// (codex-rs/config/src/types.rs). Unset, Codex takes gpt-5.6-luna and
+	// gpt-5.6-terra, whatever its model; magpie sets both to one pick.
+	memories := func() (string, error) {
+		m, err := edit.GetTOMLTable(path, "memories")
+		return cmp.Or(m["consolidation_model"], m["extract_model"]), err
+	}
+	dropMemories := func() error {
+		for _, k := range []string{"extract_model", "consolidation_model"} {
+			if err := edit.DelTOMLKey(path, "memories", k); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// one of magpie's goes too: Codex could no longer find it
 	dropSubagent := func() error {
+		if m, err := memories(); err != nil {
+			return err
+		} else if isMagpie(m) {
+			if err := dropMemories(); err != nil {
+				return err
+			}
+		}
 		model, err := subagent()
 		if err != nil {
 			return err
@@ -852,6 +884,27 @@ func codexIn(at place) *Agent {
 					}
 					return static("low", "medium", "high", "xhigh")
 				},
+			},
+			{
+				// [memories] extract_model and consolidation_model, one
+				// pick for both; Default removes them, for Codex's own
+				Key: "memories", Label: "memories", Quiet: true,
+				Get: func() string { v, _ := memories(); return v },
+				Set: func(v string) error {
+					if v == "" {
+						return dropMemories()
+					}
+					if isMagpie(v) && !routed() {
+						return fmt.Errorf("pick a model through magpie for Codex first; its memories can then be written with one of magpie's")
+					}
+					for _, k := range []string{"extract_model", "consolidation_model"} {
+						if err := edit.SetTOMLKey(path, "memories", k, v); err != nil {
+							return err
+						}
+					}
+					return nil
+				},
+				Options: func(map[string]string) []Option { return modelOptions(routed()) },
 			},
 			{
 				// how Codex takes magpie's models: beside its ChatGPT

@@ -37,6 +37,13 @@ unsaved and sent only by Save; Cancel drops them, a bad amount disables Save,
 and No limit + Save sends `null`. No click scrolls the page, nothing has a
 left border, and the open editor fits a 560px window, in Chinese and English.
 
+`gateway-key-models.test.cjs` checks the models a gateway key may use
+(#882): the badge on each key's row ("All models", or how many), the app's
+own menu (no native select) that stays inside a short window, picks sent
+only when it closes, and "All models" taking the restriction off. No click
+scrolls the page, nothing has a left border, and the row fits a 560px
+window, in Chinese and English.
+
 `api-key-usage.test.cjs` exercises the existing provider key list: adding,
 enabling and disabling, choosing the first key, renaming and removing.
 The Usage page's Gateway key rows, request filter and CSV exports identify
@@ -58,7 +65,7 @@ The settings theme picker is also switched and reloaded in Chromium and
 WebKit. No separate colours are defined for gateway keys.
 
 ```sh
-node --test --test-concurrency=1 internal/gui/tests/gateway-caller-keys.test.cjs internal/gui/tests/gateway-connect-keys.test.cjs internal/gui/tests/gateway-key-limit.test.cjs internal/gui/tests/api-key-usage.test.cjs internal/gui/tests/api-key-theme.test.cjs
+node --test --test-concurrency=1 internal/gui/tests/gateway-caller-keys.test.cjs internal/gui/tests/gateway-connect-keys.test.cjs internal/gui/tests/gateway-key-limit.test.cjs internal/gui/tests/gateway-key-models.test.cjs internal/gui/tests/api-key-usage.test.cjs internal/gui/tests/api-key-theme.test.cjs
 ```
 
 ## Other Browser Regressions
@@ -361,6 +368,17 @@ and the status line says which agent was moved to the model from one provider;
 clicked on, the found group is back. Neither click moves the page, the switch
 has no left-border accent, and every string has its Chinese.
 
+`name-suffix-where-named.test.cjs` checks the setting that says whether a
+provider's name or "· routing group" follows a name in the agents' lists (#868)
+where names are given, in Chromium and WebKit, English and Chinese. The
+provider editor's Names & levels has its three choices and says what the lists
+show. For the groups it is one setting for all of them, so it sits over the
+groups on Routing (PAMI on Discord: in one group's editor it read as that
+group's): a group's editor has no choices, only what its group will be called
+and that it is set above; a pick there posts settings/plain-names once and the
+open editor's line follows it with its unsaved name. No click scrolls, nothing
+native, no left border, and every string has its Chinese, Japanese and German.
+
 `routing-manual.test.cjs` routes a group by hand in Chromium and WebKit,
 English and Chinese (#317: pick the model, as CC Switch picks a provider). A
 manual group's card lists its models, the one every request goes to marked, and
@@ -430,6 +448,12 @@ Balance URL): the editor says so, one click moves it to `/api/user/self`
 with the quota as its field, the New-Api-User header is asked for until it
 is typed, Check balance asks as the form has it and says the fix plainly,
 and the Usage page's card does too.
+
+`balance-field-default.test.cjs` leaves a custom provider's Balance field
+empty (#881): its placeholder is the field magpie reads from a Balance URL
+whose reply it knows (new-api's `/api/usage/token` and `/api/user/self`, a
+sub2api panel's `/api/v1/user/profile`, OpenAI's `credit_grants`), following
+the URL as it is typed; any other URL keeps the example.
 
 `cli-update.test.cjs` draws the agents' CLI versions on the Agents page
 (#202) from a faked API: the version after each name, "Update to x.y.z" only
@@ -604,6 +628,12 @@ the same. Settings → Update button says which version it is hidden for, with
 Show again, and turns it off for good; the version row still offers the
 restart. No click moves the page. Panel and window, English and Chinese.
 
+`update-download-percent.test.cjs` checks the Update pill while a failed
+update downloads again (inaction on Discord): with the size known and
+nothing in yet it says 0%, with no size "Downloading…", then the percent —
+never NaN, which it said while the answer left `done` out. The click doesn't
+move the page. English and Chinese.
+
 `update-auto.test.cjs` checks Settings → Automatic updates (#472): on, every
 6 h, with nothing set; Check every saves 30 min, 1 h, 6 h or 24 h; Off is
 saved and kept through a reload, the interval staying in place, dimmed, for
@@ -759,6 +789,13 @@ row, a wider window redraws it, a metric with no price says so, and with no
 request listed there is nothing; in English and Chinese, light and dark.
 The daily chart also checks selection, gray bars on other days, filtered rows
 and CSV, an empty day, clearing a selection, keyboard input and resizing.
+
+`usage-model-at-provider.test.cjs` splits the Requests tab's chart by "Model ·
+provider" (inaction on Discord): one model at two providers is two rows of the
+ranking, each named by both with the provider's icon and its own first token,
+the faster first by Speed though fewer requests went to it. A click lists that
+provider's requests of that model (provider and model both asked for), a click
+again all of them, and the page doesn't move. English and Chinese.
 
 `usage-chart-axis.test.cjs` checks the usage chart's side labels, in the
 window's Requests tab (1180 and 560 wide) and the tray panel's Usage tab (440
@@ -1031,6 +1068,15 @@ magpie's trash as single deletes do; a session still being written to is
 left and said so, other folders stay, and an agent magpie can't delete from
 has no boxes. No click moves the page, no left-border accent, every string
 in Chinese. Chromium and WebKit, English and Chinese, API faked.
+
+`sessions-codex-provider.test.cjs` moves Codex sessions made with another
+provider to the one Codex uses now (#887): the Codex tab says how many there
+are and which provider, tags each, and Move opens magpie's own dialog with
+each ticked; Cancel posts nothing, an unticked one isn't moved, Move posts
+sessions/codex-provider with each id and Codex's provider, and Undo posts
+each back to the provider it had. No click moves the page, no left-border
+accent, every string in Chinese, Japanese and German. Chromium and WebKit,
+English and Chinese, API faked.
 
 `sessions-toolbar.test.cjs` uses ten agents to check that fitting tabs stay
 visible at 1800px, while 900, 660 and 320px windows use a compact agent menu.
@@ -1735,3 +1781,53 @@ of its own (Cindy) on the Agents page: a line under its name says whether
 magpie is added (green once it is), its button stands where the other rows'
 model picker does, as wide and lined up with it at 960 and 700px, and a click
 opens the app's link. English and Chinese, Chromium and WebKit.
+
+`privacy-hides-accounts.test.cjs` checks that Privacy's Mask personal data
+hides the accounts on screen too (inaction on Discord): until Hide accounts is
+chosen on a computer it follows the setting, so Usage's email address is
+blurred and its button pressed; an address shown on purpose with the button
+stays shown; on Settings › Privacy, turning Mask personal data on turns Hide
+accounts on, and Privacy's own Hide accounts row says so and turns it off,
+without scrolling. English and Chinese, Chromium and WebKit.
+
+`cli-path.test.cjs` checks Settings › About › Command line (PAMI on Discord):
+it says what `magpie` in a new terminal runs, with a dot for each shell (no
+left border, no native select); Add to PATH posts `/api/cli` with no shell and
+the row turns green, a shell whose PATH lacks the folder has a button naming
+its profile that posts that shell alone, and no click scrolls. On Windows it
+lists PowerShell and cmd with no profile buttons; a translocated app gets no
+button. Every string has zh, ja and de. English and Chinese, Chromium and
+WebKit; the API is faked, no shell profile is read or written.
+
+```sh
+node --test internal/gui/tests/cli-path.test.cjs
+```
+
+`update-mirror.test.cjs` checks Settings › About › Download source (#893):
+the row says updates come from GitHub; Use a mirror… opens an address field,
+an http:// address is refused with the reason in red and the draft kept, an
+https:// one saved with Enter posts `/api/settings/update-mirror` and is
+shown, and Use GitHub posts an empty mirror. A download that failed through
+the mirror says so on the Version row and offers Download from GitHub, which
+posts the empty mirror then `/api/update/install`. No native select, no left
+border, no click scrolls. English and Chinese, Chromium and WebKit; the API
+is faked.
+
+```sh
+node --test internal/gui/tests/update-mirror.test.cjs
+```
+
+`lane-limit.test.cjs` checks each key's and account's own limit on requests
+at once (#892): its row's pill says what runs and waits under it while
+requests are out ("1/1 running · 2 queued"), read again from `/api/lanes`
+every two seconds and written into the same pill, else its limit (its own or
+the provider's); a row with none shows it on hover only. A click opens the
+app's menu (no native select, no scroll): a number, the provider's (null) or
+Other… typed in place, each posted to `provider/accountconcurrency`. The
+editor's Queue size and Queue wait sit under Concurrency, as narrow, labels
+on one line, saved with it and refused out of range. No left border; every
+string has zh, ja and de. English and Chinese, Chromium and WebKit.
+
+```sh
+node --test internal/gui/tests/lane-limit.test.cjs
+```

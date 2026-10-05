@@ -93,7 +93,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         const s = document.querySelector(".rt-gsec");
         return [...s.children].map((c) => c.className);
       });
-      assert.deepEqual(order.slice(0, 3), ["row-head", "rt-gfound", "list rt-groups"]);
+      // (the names in agents' lists, for every group, between them)
+      assert.deepEqual(order.slice(0, 4), ["row-head", "rt-gfound", "rt-gnames", "list rt-groups"]);
       const border = await sw.evaluate((e) => { const c = getComputedStyle(e); return c.borderLeftWidth !== c.borderRightWidth || c.borderLeftColor !== c.borderRightColor; });
       assert.equal(border, false, "no left-border accent");
 

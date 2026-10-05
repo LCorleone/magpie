@@ -174,6 +174,12 @@ type Group struct {
 	Auto bool `json:"auto,omitempty"`
 	// Hidden is stored for a found group the user removed.
 	Hidden bool `json:"hidden,omitempty"`
+	// Disabled is a group of the user's switched off (PAMI on Discord):
+	// kept on the Routing page as it is, but not offered to agents, a
+	// request to it turned away with a word of why, and skipped where
+	// another group has it in it, until switched on again (SwitchGroup).
+	// Only SwitchGroup changes it: a save keeps it as it was.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // Member is one of a group's models as it resolves now.
@@ -478,7 +484,7 @@ func GroupFinder() func(id string) (Group, []Member, bool) {
 			entries, read = providerEntries(), true
 			all = groupsIn(entries)
 		}
-		if g, ok := groupOf(all, gid); ok {
+		if g, ok := groupOf(all, gid); ok && !g.Disabled {
 			return g, membersIn(entries, all, g), true
 		}
 		return Group{}, nil, false
@@ -509,8 +515,8 @@ func membersIn(entries []Entry, all []Group, g Group) []Member {
 			at := append(slices.Clone(path), id)
 			if gid, ok := strings.CutPrefix(id, GroupPrefix); ok {
 				sub, ok := groupOf(all, gid)
-				if !ok || slices.Contains(in, gid) || len(via) >= maxNest {
-					continue // gone, a loop, or deeper than anyone nests
+				if !ok || sub.Disabled || slices.Contains(in, gid) || len(via) >= maxNest {
+					continue // gone, switched off, a loop, or deeper than anyone nests
 				}
 				walk(sub, at, append(slices.Clone(via), sub.Live()), append(slices.Clone(in), gid))
 				continue
@@ -544,7 +550,7 @@ func groupEntries(entries []Entry) []Entry {
 	var out []Entry
 	all := groupsIn(entries)
 	for _, g := range all {
-		if g.Hidden {
+		if g.Hidden || g.Disabled {
 			continue
 		}
 		ms := membersIn(entries, all, g)
@@ -801,8 +807,10 @@ func SaveGroup(g Group) error {
 		g.Classifier = "" // nothing to ask it
 	}
 	if gid, ok := strings.CutPrefix(g.Classifier, GroupPrefix); ok {
-		if _, ok := groupOf(groupsIn(providerEntries()), gid); !ok {
+		if c, ok := groupOf(groupsIn(providerEntries()), gid); !ok {
 			return fmt.Errorf("magpie has no group %q to classify with", gid)
+		} else if c.Disabled {
+			return fmt.Errorf("%s is switched off: switch it on to classify with it", c.Name)
 		}
 	} else if g.Classifier != "" {
 		if _, _, ok := Resolve(g.Classifier); !ok {
@@ -811,8 +819,10 @@ func SaveGroup(g Group) error {
 	}
 	g.Auto, g.Hidden = false, false
 	g.Members = own // what the patterns match is found again as it is read
+	g.Disabled = false
 	for i := range f.Groups {
 		if f.Groups[i].ID == g.ID {
+			g.Disabled = f.Groups[i].Disabled && !f.Groups[i].Hidden
 			f.Groups[i] = g
 			return store(f)
 		}
@@ -1005,6 +1015,52 @@ func DeleteGroups(ids []string) error {
 		left = next
 	}
 	return nil
+}
+
+// SwitchGroup switches a group of the user's on or off (Group.Disabled).
+// A group magpie found is the catalog's, so it is removed rather than
+// switched off; and one that classifies for another stays on, or that
+// group's rules would have no one to ask.
+func SwitchGroup(id string, on bool) error {
+	f, err := read()
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(f.Groups, func(g Group) bool { return g.ID == id && !g.Hidden })
+	if i < 0 {
+		if g, ok := groupOf(groupsIn(providerEntries()), id); ok && g.Auto {
+			return fmt.Errorf("%s was found by magpie: remove it, or change it to make it yours, to switch it off", g.Name)
+		}
+		return fmt.Errorf("magpie has no group %q", id)
+	}
+	if f.Groups[i].Disabled == !on {
+		return nil
+	}
+	if !on {
+		for _, o := range f.Groups {
+			if !o.Hidden && !o.Disabled && o.ID != id && o.Classifier == GroupPrefix+id {
+				return fmt.Errorf("%s classifies %s's requests: pick another classifier there first", f.Groups[i].Name, o.Name)
+			}
+		}
+	}
+	f.Groups[i].Disabled = !on
+	return store(f)
+}
+
+// DisabledGroup is the group of the user's a model id names ("group/<id>",
+// or a model's as GroupFor takes it) when it is switched off.
+func DisabledGroup(id string) (Group, bool) {
+	gid, ok := strings.CutPrefix(strings.TrimSuffix(strings.TrimSpace(id), "[1m]"), GroupPrefix)
+	if !ok {
+		if gid, ok = GroupFor(id); !ok {
+			return Group{}, false
+		}
+		gid = strings.TrimPrefix(gid, GroupPrefix)
+	}
+	if g, ok := groupOf(Groups(), gid); ok && g.Disabled {
+		return g, true
+	}
+	return Group{}, false
 }
 
 // RemovedGroups are the found groups the user removed, whether or not

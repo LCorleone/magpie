@@ -600,12 +600,15 @@ func fetch(ctx context.Context, a Asset, path string) error {
 	}
 	res, err := source.Do(client, req)
 	if err != nil {
+		if u != a.URL {
+			return &MirrorError{Mirror: strings.TrimSuffix(u, a.URL), Err: err}
+		}
 		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		if u != a.URL {
-			return fmt.Errorf("download %s through the mirror %s: %s", filepath.Base(path), strings.TrimSuffix(u, a.URL), res.Status)
+			return &MirrorError{Mirror: strings.TrimSuffix(u, a.URL), Err: fmt.Errorf("download %s through the mirror %s: %s", filepath.Base(path), strings.TrimSuffix(u, a.URL), res.Status)}
 		}
 		return fmt.Errorf("download %s: %s", filepath.Base(path), res.Status)
 	}
@@ -632,6 +635,9 @@ func fetch(ctx context.Context, a Asset, path string) error {
 		if u != a.URL {
 			err = fmt.Errorf("%s from the mirror %s does not match its checksum from %s; not installed", filepath.Base(path), strings.TrimSuffix(u, a.URL), Site)
 		}
+	}
+	if err != nil && u != a.URL && !errors.As(err, new(*MirrorError)) {
+		err = &MirrorError{Mirror: strings.TrimSuffix(u, a.URL), Err: err}
 	}
 	if err != nil {
 		os.Remove(path)

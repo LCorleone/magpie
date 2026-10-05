@@ -300,13 +300,20 @@ body.window .view { padding: 2px 16px 8px; }
    Sessions take the whole width */
 body.window :is(#view-agents, #view-providers, #view-gateway, #view-library, #view-plugins, #view-settings) { padding-left: max(16px, calc(50% - 600px)); padding-right: max(16px, calc(50% - 600px)); }
 .view > .view-room { flex: none; pointer-events: none; } /* see "where the reader is" */
-.view::-webkit-scrollbar { width: 0; }
 /* Windows and Linux draw a classic scrollbar, arrows and all; a thin rounded
    thumb instead, like the overlay one macOS shows (left as it is there) */
 :where(body:not(.mac)) ::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
 :where(body:not(.mac)) ::-webkit-scrollbar-thumb { background: var(--faint); border: 3px solid transparent; border-radius: 10px; background-clip: padding-box; }
 :where(body:not(.mac)) ::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
 :where(body:not(.mac)) ::-webkit-scrollbar-button, :where(body:not(.mac)) ::-webkit-scrollbar-corner { display: none; background: transparent; }
+/* a page, a dialog and a framed editor that run longer than the window
+   show where the reader is in them with a thin thumb, on the Mac too
+   (PAMI on Discord: no page had a scrollbar) — the WebView draws the
+   Mac's overlay one only while a trackpad scrolls, and a mouse never */
+body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar { width: 8px; background: transparent; }
+body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-thumb { background: var(--faint); border: 2px solid transparent; border-radius: 8px; background-clip: padding-box; }
+body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
+body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-corner { background: transparent; }
 .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none; }
 body.panel .list { border: 0; border-radius: 10px; box-shadow: var(--card-edge); }
 .row { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 5px 9px 5px 11px; }
@@ -766,9 +773,11 @@ body.window .field.solo { grid-column: auto; }
 .led-strip .meter { height: 5px; margin-top: 8px; border-radius: 3px; background: var(--pill); overflow: hidden; }
 .led-strip .meter i { display: block; height: 100%; border-radius: 3px; background: var(--green); }
 .led-trend { padding: 10px 14px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-.led-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.led-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-bottom: 8px; }
 .led-bar .grow { flex: 1; }
 .led-by { font-size: 11.5px; color: var(--muted); }
+/* "Split by" and its choices wrap together, under the metrics when narrow */
+.led-split { display: flex; align-items: center; gap: 8px; }
 .led-body { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: 18px; }
 .led-chart { min-width: 0; }
 .led-chart .plot { position: relative; height: 236px; }
@@ -1744,11 +1753,13 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .badge.mapi-tag { background: var(--accent-soft); color: var(--accent); letter-spacing: .02em; text-transform: none; }
 .mchip .badge { margin: 0 -3px 0 1px; padding: 0 4px; font-size: 9px; line-height: 14px; }
 .row.model .name .badge { margin-left: 6px; padding: 0 4px; font: 600 9px/14px var(--font); }
-.row.model .minfo { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-left: 8px; cursor: help; }
-.row.model .minfo .badge { display: inline-flex; align-items: center; padding: 0 5px; font: 600 9.5px/16px var(--font); letter-spacing: .02em; text-transform: none; background: var(--pill); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); vertical-align: 0; }
-.row.model .minfo .mi-ctx { font-variant-numeric: tabular-nums; }
-.row.model .minfo .mi-img { padding: 0 4px; }
-.row.model .minfo .mi-img svg { display: block; }
+/* the chips a model is summed up in, where a list of models is read: the
+   Gateway page's list, and a routing group's members in its editor */
+.row.model .minfo, .rt-gedit .fbrow .minfo { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-left: 8px; cursor: help; }
+.row.model .minfo .badge, .rt-gedit .fbrow .minfo .badge { display: inline-flex; align-items: center; padding: 0 5px; font: 600 9.5px/16px var(--font); letter-spacing: .02em; text-transform: none; background: var(--pill); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); vertical-align: 0; }
+.row.model .minfo .mi-ctx, .rt-gedit .fbrow .minfo .mi-ctx { font-variant-numeric: tabular-nums; }
+.row.model .minfo .mi-img, .rt-gedit .fbrow .minfo .mi-img { padding: 0 4px; }
+.row.model .minfo .mi-img svg, .rt-gedit .fbrow .minfo .mi-img svg { display: block; }
 .provider .pswitch { margin-left: 8px; }
 .editor .off-note { grid-column: 1 / -1; }
 .uses { display: flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
@@ -1842,6 +1853,15 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .acc .acap.set { color: var(--accent); background: var(--accent-soft); box-shadow: none; font-weight: 500; }
 .acc .acap:hover, .acc .acap.open { color: var(--fg); background: var(--pill-hover); }
 .acc .acap-in { width: 64px; }
+/* an account's or key's limit on requests at once (#892), and how many
+   run and wait under it: shown on hover unless a limit applies */
+.acc .alane { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 7px; font: inherit; font-size: 11px; color: var(--muted); border: 0; border-radius: 5px; background: none; box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; cursor: default; opacity: 0; transition: opacity .15s, background .12s, color .12s; font-variant-numeric: tabular-nums; }
+.acc:hover .alane, .acc .alane.open, .acc .alane:focus-visible, .acc .alane.set { opacity: 1; }
+.acc .alane.set { color: var(--fg); background: var(--pill-hover); box-shadow: none; }
+.acc .alane.busy-lane { color: var(--accent); background: var(--accent-soft); font-weight: 500; }
+.acc .alane.queued { color: var(--amber); }
+.acc .alane:hover, .acc .alane.open { color: var(--fg); background: var(--pill-hover); }
+.acc .alane-in { width: 64px; }
 .acc .acap-held { color: var(--fg); }
 /* held for magpie's requests, not the agent signed in to it: a warning */
 .acc .acap-held.acap-direct { color: var(--amber); }
@@ -1852,6 +1872,21 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .acc .acct-models .acm-foot .grow { flex: 0 0 0; }
 .acc .n, .acc .rename { flex: 0 1 auto; }
 .acc .plan { flex: none; }
+/* a key's row (#841): what shows only on hover takes no room till then,
+   so a key's weight never squeezes its name away; the room it takes on
+   hover is the row's free room, else the masked key's, and the models
+   badge gives its own up first. First and Make first stay one line */
+.accts.keys .acc .plan { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; }
+.accts.keys .acc > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accts.keys .acc:not(:hover) > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet):not(:focus-visible, .open) { max-width: 0; padding-left: 0; padding-right: 0; box-shadow: none; }
+.accts.keys .acc > :is(.amodels, .alane):not(.set):not(:focus-visible, .open) { flex-shrink: 10000; }
+/* the limit pill unset on a key's row is quiet text, as the row's other
+   hover-only controls: no padding to keep, and hidden it takes back the
+   gap before it too (#892) */
+.accts.keys .acc > .alane:not(.set):not(:focus-visible, .open) { padding: 0; box-shadow: none; background: none; }
+.accts.keys .acc:not(:hover) > .alane:not(.set):not(:focus-visible, .open) { margin-left: -9px; }
+.accts.keys .acc > :is(.proto, .text.quiet) { flex-shrink: 0; }
+.accts.keys .acc .using, .accts.keys .acc > .text:not(.quiet) { flex: none; white-space: nowrap; }
 #gatewayKeys .acc { min-width: 0; }
 #gatewayKeys .acc .plan { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* a gateway key's own limit (#585): the badge, what it used under the
@@ -1869,6 +1904,9 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 #gatewayKeys .klf-err { color: var(--red); }
 #gatewayKeys .klf .klf-period { width: 100%; max-width: none; height: 28px; justify-content: space-between; color: var(--fg); }
 @media (max-width: 520px) { #gatewayKeys .klf { grid-template-columns: 1fr; } }
+/* the models a key may use (#882): a long model's id is cut, and the
+   badge gives way first on a narrow window */
+#gatewayKeys .amodels.key-models { display: inline-block; flex: 0 1 auto; min-width: 24px; max-width: 180px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; }
 /* the Settings row's picker: the key row's badge, always shown */
 .row.pref .proto.pick { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 6px 0 9px; font: inherit; font-size: 12px; color: var(--fg-2); border: 0; border-radius: 7px; background: var(--pill); white-space: nowrap; cursor: default; transition: background .12s, color .12s; }
 .row.pref .proto.pick svg { opacity: .7; transition: transform .15s var(--ease); }
@@ -2047,7 +2085,7 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .editor .proxy-row .proxy-mode { flex: none; }
 .editor .proxy-row input.proxy-url { flex: 1 1 auto; width: auto; min-width: 0; }
 .editor .proxy-row input.proxy-url.off { visibility: hidden; }
-.editor input.concurrency[type] { width: 12em; max-width: 100%; }
+.editor :is(input.concurrency, input.queue-limit, input.queue-wait)[type] { width: 12em; max-width: 100%; }
 .editor input[type="number"] { -moz-appearance: textfield; }
 .editor input[type="number"]::-webkit-inner-spin-button, .editor input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 /* each of a subscription's accounts with a proxy of its own: its name
@@ -2109,6 +2147,16 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .opt.on { color: var(--fg); }
 /* how often magpie checks for updates, while it doesn't by itself */
 .update-every-row.off .segs { opacity: .55; }
+/* Command line: each shell's `magpie`, a dot for whether it runs this app */
+.cli-row .sub { overflow-wrap: anywhere; }
+.cli-shells { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.cli-shell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); min-height: 22px; }
+.cli-shell .cli-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.cli-shell.on .cli-dot { background: var(--green); }
+.cli-shell .cli-sh { color: var(--fg-2); min-width: 72px; }
+.cli-shell .cli-state { overflow-wrap: anywhere; min-width: 0; }
+.cli-shell button.text { font-size: 12px; height: 20px; line-height: 20px; padding-top: 0; padding-bottom: 0; }
+.cli-note { margin-top: 4px; font-size: 11px; color: var(--faint); }
 .opt:hover:not(.on) { color: var(--fg-2); }
 .thumb {
   position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; border-radius: 6px;
@@ -2450,7 +2498,6 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
   box-shadow: 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, .32), 0 2px 8px rgba(0, 0, 0, .12);
 }
 .modal .dialog.swap { animation: content-in .22s var(--ease); }
-.modal .dialog::-webkit-scrollbar { width: 0; }
 /* In a dialog the editor's head and buttons stay put and only the fields
    between them scroll; both bars are the same height, their contents
    centred in it. */
@@ -2460,7 +2507,6 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
   flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   display: grid; grid-template-columns: inherit; gap: 10px 14px; align-items: start; padding: 14px 18px;
 }
-.modal .editor.framed > .ebody::-webkit-scrollbar { width: 0; }
 .modal .editor.framed > .ehead, .modal .editor.framed > .bar { flex: none; min-height: 48px; margin: 0; padding: 0 18px; }
 .modal .editor.framed > .ehead { border-bottom: 1px solid var(--line-2); }
 .modal .editor.framed > .bar { border-top: 1px solid var(--line-2); }

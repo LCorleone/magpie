@@ -119,6 +119,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator(".rename-in").press("Enter");
       await page.locator(".accts .acc .rename", { hasText: "Workspace" }).waitFor();
       assert.equal(posts.at(-1).action, "rename");
+      await backup().hover();
       await backup().getByRole("button", { name: w.remove, exact: true }).click();
       await page.waitForFunction(() => ![...document.querySelectorAll(".accts .acc")].some((r) => r.textContent.includes("Backup")));
 

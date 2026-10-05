@@ -26,9 +26,12 @@ func freePort(t *testing.T) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
-// answers says whether a magpie gateway answers on port p.
+// answers says whether a magpie gateway answers on port p. Keep-alive is
+// off: a moved gateway finishes the connections it has (Relisten), so a
+// pooled one from the polls above would answer from the old port forever
+// and say nothing about new connections to it.
 func answers(p int) bool {
-	c := &http.Client{Timeout: time.Second}
+	c := &http.Client{Timeout: time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
 	res, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/", p))
 	if err != nil {
 		return false

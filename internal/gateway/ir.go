@@ -137,6 +137,11 @@ type Request struct {
 	// (AI Studio's, or a proxy in front of it on this machine or the LAN),
 	// which gives the model's thoughts only when asked in thinking_config.
 	GeminiCompat bool
+	// Resume is set on a request built to go on with a reply the client
+	// already has part of (continuation.go): its last message is that
+	// part, an assistant message the model goes on from, not a turn
+	// answered.
+	Resume bool
 	// Namespaced are the tools a Responses client offered inside a
 	// namespace, by the flat name the model is offered them under.
 	Namespaced map[string]nsTool
