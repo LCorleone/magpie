@@ -824,6 +824,11 @@ func (s *Server) countTokens(w http.ResponseWriter, r *http.Request) {
 		id = sid
 	}
 	p, model, ok := provider.Resolve(id)
+	// a gateway key held to some models (#882) counts no tokens on one it
+	// may not use, as it would be refused serving it
+	if countHeld(w, r, provider.Anthropic, id) {
+		return
+	}
 	s.countOn(w, r, p, model, ok, body)
 }
 
@@ -985,6 +990,11 @@ func (s *Server) gemini(w http.ResponseWriter, r *http.Request) {
 	case "streamGenerateContent":
 		stream = true
 	case "countTokens":
+		// a gateway key held to some models (#882) counts no tokens on one
+		// it may not use, as it would be refused serving it
+		if countHeld(w, r, provider.Gemini, model) {
+			return
+		}
 		s.geminiCount(w, model, body)
 		return
 	default:

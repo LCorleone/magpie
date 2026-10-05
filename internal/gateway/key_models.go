@@ -135,3 +135,32 @@ func keyModelError(who access.Identity, model string) string {
 	return fmt.Sprintf("The gateway key %q may not use %s; it may use %s. Change the key's models in magpie's Gateway page, or use a model it has.",
 		who.KeyName, model, strings.Join(who.Models, ", "))
 }
+
+// countHeld answers the 403 a gateway key held to some models (#882) gets
+// for counting tokens on one it may not use, as it would be refused
+// serving it: Anthropic's count_tokens and Gemini's :countTokens, id the
+// model as each asks it, resolved — a bare group's name, an auto group's
+// stand-in — and a group judged by its members. proto is the API the
+// error is answered on.
+func countHeld(w http.ResponseWriter, r *http.Request, proto provider.Protocol, id string) bool {
+	keyWho, held := keyHolds(r)
+	if !held {
+		return false
+	}
+	if gid, ok := provider.GroupFor(id); ok {
+		id = gid
+	}
+	if sid, ok := provider.AutoStandIn(id); ok {
+		id = sid
+	}
+	p, model, ok := provider.Resolve(id)
+	if !ok {
+		return false // counted nowhere: a local estimate, as before
+	}
+	g, ms, isGroup := provider.FindGroup(id)
+	if isGroup && !groupAllowed(keyWho, g, ms) || !isGroup && !modelAllowed(keyWho, p, model) {
+		writeError(w, proto, http.StatusForbidden, keyModelError(keyWho, id))
+		return true
+	}
+	return false
+}

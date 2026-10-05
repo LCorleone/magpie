@@ -422,6 +422,12 @@ func (s *Server) serveSystemOne(w http.ResponseWriter, r *http.Request) {
 	if asked == "" {
 		asked = p.ID + "/" + model
 	}
+	// a gateway key held to some models (#882) is refused another; a
+	// decision model is a model, and System One asks one directly
+	if keyWho, held := keyHolds(r); held && !modelAllowed(keyWho, p, model) {
+		writeError(w, provider.Chat, http.StatusForbidden, keyModelError(keyWho, asked))
+		return
+	}
 	seat := decideSeat(p, model)
 	var used Usage
 	tr := s.trace.begin(Route{Time: start, Agent: agentOf(r), Session: sessionOf(r.Header), Model: asked, Provider: p.ID,
