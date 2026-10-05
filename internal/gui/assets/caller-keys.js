@@ -4,6 +4,13 @@ let gatewayKeysRead = 0;
 // gatewayLimit is the key whose limit editor is open, and its draft
 // (#585): what is picked in it is sent only by its Save.
 let gatewayLimit = null;
+// gatewayKeyModels is the key whose model editor is open, and its draft
+// (#882): a Set of the "provider/model" ids (and "provider/*") picked,
+// sent only by its Save. gatewayKeyCatalog is the picker's models, read
+// from the same place the Routing view reads them.
+let gatewayKeyModels = null;
+let gatewayKeyCatalog = null;
+let gatewayKeyCatalogRead = 0;
 let connectURL = "", connectKeyID = "", connectSecret = null;
 
 function connectPick(id, label, text, options, value, choose) {
@@ -60,6 +67,7 @@ async function gatewayKeyAction(action, body) {
     gatewayKeys = out.keys || [];
     gatewayKeyDraft = null;
     if (action === "limit-key" || !gatewayKeys.some((k) => k.id === gatewayLimit?.id)) gatewayLimit = null;
+    if (action === "models-key" || !gatewayKeys.some((k) => k.id === gatewayKeyModels?.id)) gatewayKeyModels = null;
     renderGatewayKeys();
     if (view === "gateway" && providers) selectConnectKey(connectKeyID);
     return out;
@@ -154,8 +162,10 @@ function renderGatewayKeys() {
     rm.onclick = () => askGatewayKey(k, false);
     const rotate = el("button", "text quiet", t("Rotate key"));
     rotate.onclick = () => askGatewayKey(k, true);
-    row.append(tick, gatewayRename(k), el("span", "plan mono", k.masked), el("span", "grow"), gatewayLimitBadge(k), copyCallerKeyBtn(k), rotate, rm);
-    const under = gatewayLimit?.id === k.id ? gatewayLimitEditor(k) : k.used ? gatewayLimitLine(k) : null;
+    row.append(tick, gatewayRename(k), el("span", "plan mono", k.masked), el("span", "grow"), gatewayLimitBadge(k), gatewayKeyModelsBadge(k), copyCallerKeyBtn(k), rotate, rm);
+    const under = gatewayLimit?.id === k.id ? gatewayLimitEditor(k)
+      : gatewayKeyModels?.id === k.id ? gatewayKeyModelsEditor(k)
+        : k.used ? gatewayLimitLine(k) : null;
     if (under) row.classList.add("with-limit"), row.append(under);
     list.append(row);
   }
@@ -234,6 +244,7 @@ function gatewayLimitBadge(k) {
     e.preventDefault();
     if (gatewayLimit?.id === k.id) gatewayLimit = null;
     else {
+      gatewayKeyModels = null; // one editor under a row at a time
       const l = k.limit || {};
       gatewayLimit = { id: k.id, period: l.period || "day", tokens: l.tokens ? String(l.tokens) : "", cost: l.cost ? String(l.cost) : "", cacheReads: !!l.cacheReads };
     }
@@ -352,6 +363,134 @@ function gatewayLimitEditor(k) {
   box.append(fields, hint, err);
   if (k.used) box.append(gatewayLimitLine(k));
   box.append(foot);
+  update();
+  return box;
+}
+
+// ---- a gateway key's model whitelist (#882) ----
+
+// loadGatewayKeyCatalog reads the models a key's editor offers, from the
+// Routing view's own list of them.
+async function loadGatewayKeyCatalog() {
+  const read = ++gatewayKeyCatalogRead;
+  try {
+    const out = await api("groups");
+    if (read !== gatewayKeyCatalogRead) return;
+    gatewayKeyCatalog = out.models || [];
+    if (gatewayKeyModels) renderGatewayKeys();
+  } catch (e) { status(t(e.message), "err"); }
+}
+
+// gatewayKeyModelsBadge opens a key's model editor (#882): "Models" on
+// hover while every model is its, else how many it takes, always shown.
+function gatewayKeyModelsBadge(k) {
+  const n = k.models?.length || 0;
+  const b = el("button", "amodels models" + (n ? " set" : "") + (gatewayKeyModels?.id === k.id ? " open" : ""));
+  b.type = "button";
+  b.textContent = n ? (n === 1 ? t("1 model") : t("{n} models", { n })) : t("Models");
+  b.title = t(n ? "Change the models this key may use" : "Limit the models this key may use");
+  b.setAttribute("aria-label", b.title);
+  b.setAttribute("aria-expanded", gatewayKeyModels?.id === k.id ? "true" : "false");
+  b.onclick = (e) => {
+    e.preventDefault();
+    if (gatewayKeyModels?.id === k.id) {
+      gatewayKeyModels = null;
+    } else {
+      gatewayLimit = null; // one editor under a row at a time
+      gatewayKeyModels = { id: k.id, set: new Set(k.models || []) };
+      if (gatewayKeyCatalog === null) loadGatewayKeyCatalog();
+    }
+    renderGatewayKeys();
+  };
+  return b;
+}
+
+// gatewayKeyModelsEditor stages a key's model whitelist (#882): its
+// catalog's models by provider — an "every model of it" row for a
+// provider's "*" — and the ids the catalog no longer has kept as they
+// are; nothing is sent until Save.
+function gatewayKeyModelsEditor(k) {
+  const d = gatewayKeyModels;
+  const box = el("div", "acct-models key-models-ed");
+  box.onclick = (e) => e.stopPropagation();
+  const kept = k.models || [];
+  const changed = () => d.set.size !== kept.length || kept.some((m) => !d.set.has(m));
+  const unsaved = el("span", "hint munsaved", t("unsaved"));
+  unsaved.title = t("Made when you Save; Cancel drops it");
+  const save = el("button", "text primary", t("Save"));
+  const update = () => {
+    unsaved.hidden = !changed();
+    save.disabled = !changed();
+  };
+  const row = (id, name) => {
+    const cb = el("input");
+    cb.type = "checkbox";
+    cb.checked = d.set.has(id);
+    cb.setAttribute("aria-label", name && name !== id ? id + " — " + name : id);
+    const l = el("label", "km-row");
+    l.append(cb, el("code", "", id));
+    if (name && name !== id) l.append(el("span", "km-note", name));
+    cb.onchange = () => {
+      if (cb.checked) d.set.add(id);
+      else d.set.delete(id);
+      update();
+    };
+    return l;
+  };
+  const list = el("div", "km-list");
+  if (gatewayKeyCatalog === null) {
+    list.append(el("div", "none", t("Reading…")));
+  } else {
+    const known = new Set();
+    const byProvider = new Map();
+    for (const m of gatewayKeyCatalog) {
+      if (!byProvider.has(m.provider)) byProvider.set(m.provider, { name: m.providerName || m.provider, ms: [] });
+      byProvider.get(m.provider).ms.push(m);
+    }
+    for (const [pid, p] of byProvider) {
+      const head = el("div", "km-prov");
+      head.append(el("span", "km-prov-name", p.name), row(pid + "/*", t("Every model of {provider}", { provider: p.name })));
+      list.append(head);
+      for (const m of p.ms) {
+        known.add(m.id);
+        list.append(row(m.id, m.name));
+      }
+    }
+    // the ids the key keeps that the catalog no longer offers — a
+    // provider gone or renamed — kept until unchecked
+    const gone = kept.filter((m) => {
+      if (known.has(m)) return false;
+      const pid = m.endsWith("/*") ? m.slice(0, -2) : m.split("/")[0];
+      return !byProvider.has(pid);
+    });
+    if (gone.length) {
+      list.append(el("div", "km-prov km-gone", t("No longer in the catalog")));
+      for (const m of gone) list.append(row(m, ""));
+    }
+  }
+  const hint = el("div", "hint", t("A key with none picked takes every model. Check a provider's every-model row for all of its models at once."));
+  const close = () => { gatewayKeyModels = null; renderGatewayKeys(); };
+  const cancel = el("button", "text", t("Cancel"));
+  cancel.onclick = close;
+  save.onclick = async () => {
+    if (save.disabled) return;
+    save.disabled = true;
+    const models = [...d.set];
+    const out = await gatewayKeyAction("models-key", { key: k.id, models: models.length ? models : null });
+    if (!out) { update(); return; }
+    status(t(models.length ? "Models saved for {name}" : "Every model is {name}'s again", { name: k.name }), "ok");
+  };
+  const foot = el("div", "acm-foot");
+  foot.append(el("span", "grow"), unsaved);
+  const every = el("button", "text", t("Every model"));
+  every.title = t("Unchecks them all; Save makes it");
+  every.onclick = () => {
+    d.set.clear();
+    list.querySelectorAll("input[type=checkbox]").forEach((cb) => { cb.checked = false; });
+    update();
+  };
+  foot.append(every, cancel, save);
+  box.append(list, hint, foot);
   update();
   return box;
 }

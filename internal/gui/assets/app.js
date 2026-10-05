@@ -4832,7 +4832,7 @@ function renderGatewayView() {
   renderGateway();
   $("#gatewayKeysBlock").hidden = !providers.gateway.lan;
   if (!providers.gateway.lan) gatewayKeyDraft = null;
-  if (gatewayKeyDraft === null && gatewayLimit === null && !$("#gatewayKeys .rename-in")) renderGatewayKeys();
+  if (gatewayKeyDraft === null && gatewayLimit === null && gatewayKeyModels === null && !$("#gatewayKeys .rename-in")) renderGatewayKeys();
   renderConnect();
   renderGatewayModels();
   renderActivity();

@@ -109,3 +109,54 @@ func TestCallerKeyManagementAndUsageRoutes(t *testing.T) {
 		t.Fatal("unknown key accepted", w.Code)
 	}
 }
+
+// The GUI holds a gateway key to a subset of the catalog through the same
+// route its limit goes by (#882): the models reach the store as they were
+// sent, come back in the list, and what can't be a model is said to the
+// page as an error.
+func TestCallerKeyModelsRoute(t *testing.T) {
+	sandboxHome(t)
+	mux := http.NewServeMux()
+	callerKeyRoutes(mux)
+	request := func(path, body string) (int, string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("POST", path, strings.NewReader(body)))
+		return w.Code, w.Body.String()
+	}
+	var s struct {
+		Keys []access.Key `json:"keys"`
+	}
+	if code, body := request("/api/caller-keys/add-key", `{"name":"Intern"}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	id := func() string {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/caller-keys", nil))
+		s.Keys = nil
+		if err := json.Unmarshal(w.Body.Bytes(), &s); err != nil || len(s.Keys) != 1 {
+			t.Fatal("list", err, w.Body.String())
+		}
+		return s.Keys[0].ID
+	}()
+	if code, body := request("/api/caller-keys/models-key", `{"key":"`+id+`","models":["openai/gpt-5-mini"," deepseek/* "]}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/caller-keys", nil))
+	if !strings.Contains(w.Body.String(), `"models":["openai/gpt-5-mini","deepseek/*"]`) {
+		t.Fatal("list without the models", w.Body.String())
+	}
+	if code, body := request("/api/caller-keys/models-key", `{"key":"`+id+`","models":["bare-model"]}`); code != 400 || !strings.Contains(body, "must be a model as") {
+		t.Fatal("accepted a bare model", code, body)
+	}
+	// null takes the whitelist off, and nothing of it stays in the list
+	if code, body := request("/api/caller-keys/models-key", `{"key":"`+id+`","models":null}`); code != 200 {
+		t.Fatal(code, body)
+	}
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/caller-keys", nil))
+	if strings.Contains(w.Body.String(), `"models"`) {
+		t.Fatal("an emptied whitelist stayed in the list")
+	}
+}

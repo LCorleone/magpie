@@ -14,7 +14,10 @@ function fixture(lang, theme, events, options = {}) {
     { id: "server", name: "Server", masked: "sk-magpie-key-…222222" },
     { id: "work", name: "Work", masked: "sk-magpie-key-…333333" },
   ];
-  for (const k of keys) if (options.limits?.[k.id]) Object.assign(k, options.limits[k.id]);
+  for (const k of keys) {
+    if (options.limits?.[k.id]) Object.assign(k, options.limits[k.id]);
+    if (options.models?.[k.id]) k.models = [...options.models[k.id]];
+  }
   let serial = 0;
   let lan = !!options.lan;
   let lanKeyID = "", rotations = 0, lanSecret = "";
@@ -56,7 +59,7 @@ function fixture(lang, theme, events, options = {}) {
       providers: [{ id: "relay", name: "Relay", icon: "generic", models: [{ id: "m", name: "Model", on: true }], agents: [] }],
       gateway: { running: true, window: true, mine: true, url: "http://127.0.0.1:3999", lan, lanURLs: lan ? lanURLs : [], calls: [], groups: [] },
     });
-    if (url.pathname === "/api/groups") return json({ groups: [], models: [] });
+    if (url.pathname === "/api/groups") return json({ groups: [], models: options.catalog || [] });
     if (url.pathname === "/api/settings/lan") {
       const body = req.postDataJSON();
       events.push({ action: "lan", body });
@@ -103,6 +106,7 @@ function fixture(lang, theme, events, options = {}) {
       }
       if (action === "remove-key") keys = keys.filter((v) => v !== k);
       if (action === "on-key" || action === "off-key") k.off = action === "off-key";
+      if (action === "models-key") k.models = body.models?.length ? [...body.models] : undefined;
       if (action === "limit-key") {
         // what a key has used is the fixture's; a new limit starts unused
         k.limit = body.limit || undefined;

@@ -1869,6 +1869,17 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 #gatewayKeys .klf-err { color: var(--red); }
 #gatewayKeys .klf .klf-period { width: 100%; max-width: none; height: 28px; justify-content: space-between; color: var(--fg); }
 @media (max-width: 520px) { #gatewayKeys .klf { grid-template-columns: 1fr; } }
+/* a gateway key's model whitelist (#882): the picker under the row, by
+   provider with an every-model row for its "*" */
+#gatewayKeys .key-models-ed .km-list { display: grid; gap: 2px; max-height: 216px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; }
+#gatewayKeys .km-prov { display: flex; align-items: center; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--muted); }
+#gatewayKeys .km-prov:first-child { margin-top: 0; }
+#gatewayKeys .km-prov-name { flex: none; font-weight: 500; }
+#gatewayKeys .km-prov .km-row { margin-left: auto; }
+#gatewayKeys .km-gone { font-style: italic; }
+#gatewayKeys .km-row { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--fg-2); cursor: pointer; }
+#gatewayKeys .km-row code { font-size: 11px; overflow-wrap: anywhere; }
+#gatewayKeys .km-note { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the Settings row's picker: the key row's badge, always shown */
 .row.pref .proto.pick { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 6px 0 9px; font: inherit; font-size: 12px; color: var(--fg-2); border: 0; border-radius: 7px; background: var(--pill); white-space: nowrap; cursor: default; transition: background .12s, color .12s; }
 .row.pref .proto.pick svg { opacity: .7; transition: transform .15s var(--ease); }
