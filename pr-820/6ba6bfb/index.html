@@ -1,0 +1,18 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#820 界面预览 · 6ba6bfb</title>
+<style>:root{color-scheme:light dark;--bg:#f6f6f7;--fg:#1d1d1f;--muted:#6e6e73;--card:#fff;--line:#e5e5ea}
+@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#f2f2f4;--muted:#9a9aa0;--card:#1c1c1f;--line:#2c2c30}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:28px 16px 60px}h1{font-size:20px;margin:0 0 4px}.m{color:var(--muted);font-size:13px;margin:0 0 20px}
+video,img{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--card)}figure{margin:0 0 28px}figcaption{color:var(--muted);font-size:13px;margin-top:8px}
+a{color:inherit}</style>
+<main><h1>#820 界面预览</h1><p class="m">commit 6ba6bfb · <a href="https://github.com/yetone/magpie/pull/820">回到 PR</a> · 为有未保存修改的供应商/路由/资源库编辑器加上应用内样式的「放弃修改」确认框，并在移除供应商、账号或密钥、路由组、插件、资源库条目时先弹出「移除」确认框（带遮罩、危险色按钮、焦点陷阱），未改动的编辑器仍可直接关闭。另外给导航加 aria-current、给对话框加 role/aria-modal 与背景 inert、把标签与说明关联到控件，并在首屏绘制前应用模式/平台类、主题与字号。</p>
+<figure><video src="preview.mp4" controls autoplay muted playsinline poster="poster.png"></video><figcaption>红线是鼠标走过的轨迹，红色圆环是一次点击；底部文字是这一步在做什么。空格暂停，← → 逐段查看。</figcaption></figure>
+<figure><img src="01-provider-editor.png" alt="刚打开的编辑器，没有任何改动"><figcaption>供应商编辑器：未保存修改的放弃确认 · 刚打开的编辑器，没有任何改动</figcaption></figure>
+<figure><img src="02-provider-closed.png" alt="未改动时点「取消」之后的供应商页"><figcaption>供应商编辑器：未保存修改的放弃确认 · 未改动时点「取消」之后的供应商页</figcaption></figure>
+<figure><img src="03-discard-dialog.png" alt="按 Esc 之后出现的确认框"><figcaption>供应商编辑器：未保存修改的放弃确认 · 按 Esc 之后出现的确认框</figcaption></figure>
+<figure><img src="04-editor-kept.png" alt="确认框里点左边按钮之后的编辑器"><figcaption>供应商编辑器：未保存修改的放弃确认 · 确认框里点左边按钮之后的编辑器</figcaption></figure>
+<figure><img src="05-providers-after-discard.png" alt="确认之后的供应商页"><figcaption>供应商编辑器：未保存修改的放弃确认 · 确认之后的供应商页</figcaption></figure>
+<figure><img src="06-editor-bottom-bar.png" alt="编辑器底部的操作栏"><figcaption>移除供应商前的确认 · 编辑器底部的操作栏</figcaption></figure>
+<figure><img src="07-providers-after-cancel.png" alt="确认之后的供应商页"><figcaption>移除供应商前的确认 · 确认之后的供应商页</figcaption></figure>
+</main></html>

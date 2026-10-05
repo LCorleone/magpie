@@ -1,0 +1,34 @@
+{
+  "summary": "供应商页新增了「本机配置发现」提示：打开供应商页时后台扫描 Alma / CC Switch / Claude Code / Codex 的可导入配置，列表为空时在列表上方显示醒目的发现条，已有供应商时在「添加供应商」旁显示紧凑的导入链接，并带「忽略」（指纹记在本地存储）。点该链接会用发现结果预选打开既有的导入面板，导入完成后重新扫描。",
+  "scenes": [
+    {
+      "title": "供应商页与本地配置发现入口",
+      "shots": [
+        {
+          "file": "01-providers-list.png",
+          "caption": "供应商页：列表与底部的「添加供应商」；本机没有可发现的配置，发现条不出现",
+          "width": 2560
+        },
+        {
+          "file": "02-add-sheet.png",
+          "caption": "添加供应商面板，含「导入…」入口",
+          "width": 2560
+        },
+        {
+          "file": "03-import-apps-picker.png",
+          "caption": "从其他应用导入面板：这里列出各应用的可导入配置（本机为空）",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "发现条只在机器上真的存在可导入的 Alma / CC Switch / Claude Code / Codex 配置时才出现；这个沙盒只有 DeepSeek 一个供应商，也没有这些应用的配置文件，所以「发现 N 项本地供应商配置」提示条、紧凑的「导入本地配置（N）…」链接，以及「忽略」后跨窗口重启的记忆都无法演示。下面只能展示供应商页本身和手动打开的导入面板（发现为空时页面与改动前一致）。",
+  "interactive": true,
+  "pages": 1
+}

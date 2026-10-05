@@ -1,0 +1,16 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#852 界面预览 · 3273a2a</title>
+<style>:root{color-scheme:light dark;--bg:#f6f6f7;--fg:#1d1d1f;--muted:#6e6e73;--card:#fff;--line:#e5e5ea}
+@media (prefers-color-scheme:dark){:root{--bg:#111113;--fg:#f2f2f4;--muted:#9a9aa0;--card:#1c1c1f;--line:#2c2c30}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:28px 16px 60px}h1{font-size:20px;margin:0 0 4px}.m{color:var(--muted);font-size:13px;margin:0 0 20px}
+video,img{display:block;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--card)}figure{margin:0 0 28px}figcaption{color:var(--muted);font-size:13px;margin-top:8px}
+a{color:inherit}</style>
+<main><h1>#852 界面预览</h1><p class="m">commit 3273a2a · <a href="https://github.com/yetone/magpie/pull/852">回到 PR</a> · 设置 › 网络与共享 的代理行在地址是 socks5:// / socks5h:// 时，会在地址框之外多出「用户名（可选）」「密码（可选）」两个输入框和一个「保存」按钮；保存后地址栏里不含凭据，代理状态文字也不再显示凭据，HTTP 等其它地址与原来一样。</p>
+<figure><video src="preview.mp4" controls autoplay muted playsinline poster="poster.png"></video><figcaption>红线是鼠标走过的轨迹，红色圆环是一次点击；底部文字是这一步在做什么。空格暂停，← → 逐段查看。</figcaption></figure>
+<figure><img src="01-proxy-row-before.png" alt="代理行，代理方式当前为「自动」"><figcaption>SOCKS5 代理的用户名与密码 · 代理行，代理方式当前为「自动」</figcaption></figure>
+<figure><img src="02-socks-auth-fields.png" alt="地址为 socks5:// 时，这一行多出的用户名、密码与「保存」"><figcaption>SOCKS5 代理的用户名与密码 · 地址为 socks5:// 时，这一行多出的用户名、密码与「保存」</figcaption></figure>
+<figure><img src="03-socks-auth-filled.png" alt="用户名与密码都已填写"><figcaption>SOCKS5 代理的用户名与密码 · 用户名与密码都已填写</figcaption></figure>
+<figure><img src="04-proxy-saved-fields.png" alt="保存后这一行：地址栏、用户名栏与密码栏"><figcaption>SOCKS5 代理的用户名与密码 · 保存后这一行：地址栏、用户名栏与密码栏</figcaption></figure>
+<figure><img src="05-proxy-status-masked.png" alt="保存后的代理状态文字"><figcaption>SOCKS5 代理的用户名与密码 · 保存后的代理状态文字</figcaption></figure>
+</main></html>

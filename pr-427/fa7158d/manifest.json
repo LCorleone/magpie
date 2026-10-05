@@ -1,0 +1,29 @@
+{
+  "summary": "新增 Reasonix Studio 这个 Agent：注册后会在 Agents 页出现一行，带 executor 与 planner 两个模型栏（新模型选择器分支与专用图标），这两栏的「默认」选项说明改为「还原原来的选择」，并在最后一栏取消接入时弹出 Reasonix 专用的还原确认与状态提示。",
+  "scenes": [
+    {
+      "title": "在 Agents 页找 Reasonix Studio 出现的位置",
+      "shots": [
+        {
+          "file": "01-agents-installed-list.png",
+          "caption": "Agents 页：已检测到的 Agent 列表，Reasonix Studio 不在其中",
+          "width": 2560
+        },
+        {
+          "file": "02-agents-install-expanded.png",
+          "caption": "展开后的「安装其他 Agent」列表：检测到 Reasonix Studio 安装后，它就会从这里移到上面的 Agent 列表",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "沙箱没有安装 Reasonix Studio 2.x，也没有它的原生 CLI，检测不通过，所以 Agents 页里出现不了「Reasonix Studio」这一行：executor/planner 两个模型栏的渲染与列宽、模型选择器里「还原原来的 executor/planner 选择」的说明、以及取消接入时 Reasonix 专用的还原确认弹窗和状态文案都无法实地演示；只能展示它会出现的「安装其他 Agent」列表。描述里的 `magpie reasonix` CLI 子命令不属于界面。",
+  "interactive": true,
+  "pages": 1
+}

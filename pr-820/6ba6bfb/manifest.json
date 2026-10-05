@@ -1,0 +1,66 @@
+{
+  "summary": "为有未保存修改的供应商/路由/资源库编辑器加上应用内样式的「放弃修改」确认框，并在移除供应商、账号或密钥、路由组、插件、资源库条目时先弹出「移除」确认框（带遮罩、危险色按钮、焦点陷阱），未改动的编辑器仍可直接关闭。另外给导航加 aria-current、给对话框加 role/aria-modal 与背景 inert、把标签与说明关联到控件，并在首屏绘制前应用模式/平台类、主题与字号。",
+  "scenes": [
+    {
+      "title": "供应商编辑器：未保存修改的放弃确认",
+      "shots": [
+        {
+          "file": "01-provider-editor.png",
+          "caption": "刚打开的编辑器，没有任何改动",
+          "width": 2560
+        },
+        {
+          "file": "02-provider-closed.png",
+          "caption": "未改动时点「取消」之后的供应商页",
+          "width": 2560
+        },
+        {
+          "file": "03-discard-dialog.png",
+          "caption": "按 Esc 之后出现的确认框",
+          "width": 1120
+        },
+        {
+          "file": "04-editor-kept.png",
+          "caption": "确认框里点左边按钮之后的编辑器",
+          "width": 2560
+        },
+        {
+          "file": "05-providers-after-discard.png",
+          "caption": "确认之后的供应商页",
+          "width": 2560
+        }
+      ]
+    },
+    {
+      "title": "移除供应商前的确认",
+      "shots": [
+        {
+          "file": "06-editor-bottom-bar.png",
+          "caption": "编辑器底部的操作栏",
+          "width": 1296
+        },
+        {
+          "file": "07-providers-after-cancel.png",
+          "caption": "确认之后的供应商页",
+          "width": 2560
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [
+    "供应商编辑器：未保存修改的放弃确认 · type #modal input[type=\"url\"]: nothing visible matches #modal input[type=\"url\"] (0 in the page)",
+    "移除供应商前的确认 · click #modal button: won't press \"移除\"",
+    "移除供应商前的确认 · click #modal .bar button.danger: won't press \"移除\"",
+    "移除供应商前的确认 · type #modal input[type=\"url\"]: nothing visible matches #modal input[type=\"url\"] (0 in the page)",
+    "移除供应商前的确认 · shot dialog.action-confirm: nothing visible matches dialog.action-confirm (0 in the page)",
+    "移除供应商前的确认 · click dialog.action-confirm .bar button:last-of-type: nothing visible matches dialog.action-confirm .bar button:last-of-type (0 in the page)"
+  ],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "沙盒里只有一个 DeepSeek 供应商、没有路由组、没有订阅账号、也没有可移除的插件或资源库条目，所以路由组删除、账号/密钥移除、插件与资源库移除的确认框，以及路由、资源库编辑器的放弃确认都看不到；离开页面时的浏览器原生确认（beforeunload）也无法录进视频。aria-current、role=dialog/aria-modal、焦点陷阱、背景 inert、字段的 label 与 aria-describedby，以及 layout.js/theme.js 的首屏前处理，在截图里看不到可见变化。",
+  "interactive": true,
+  "pages": 1
+}

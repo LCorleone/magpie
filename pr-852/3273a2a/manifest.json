@@ -1,0 +1,44 @@
+{
+  "summary": "设置 › 网络与共享 的代理行在地址是 socks5:// / socks5h:// 时，会在地址框之外多出「用户名（可选）」「密码（可选）」两个输入框和一个「保存」按钮；保存后地址栏里不含凭据，代理状态文字也不再显示凭据，HTTP 等其它地址与原来一样。",
+  "scenes": [
+    {
+      "title": "SOCKS5 代理的用户名与密码",
+      "shots": [
+        {
+          "file": "01-proxy-row-before.png",
+          "caption": "代理行，代理方式当前为「自动」",
+          "width": 1120
+        },
+        {
+          "file": "02-socks-auth-fields.png",
+          "caption": "地址为 socks5:// 时，这一行多出的用户名、密码与「保存」",
+          "width": 1120
+        },
+        {
+          "file": "03-socks-auth-filled.png",
+          "caption": "用户名与密码都已填写",
+          "width": 1120
+        },
+        {
+          "file": "04-proxy-saved-fields.png",
+          "caption": "保存后这一行：地址栏、用户名栏与密码栏",
+          "width": 1120
+        },
+        {
+          "file": "05-proxy-status-masked.png",
+          "caption": "保存后的代理状态文字",
+          "width": 1840
+        }
+      ]
+    }
+  ],
+  "video": "preview.mp4",
+  "poster": "poster.png",
+  "errors": [],
+  "leak": false,
+  "skipped": null,
+  "mismatch": "",
+  "unseen": "沙盒界面是 zh-CN，日语、德语的标签不会出现在画面上（切换「语言」可以看，但本次不演示）；沙盒里没有真实可用的、需要鉴权的 SOCKS5 代理，所以看不到保存后实际经过该代理的请求是否带上凭据，只能看到地址与状态文字里没有凭据。",
+  "interactive": true,
+  "pages": 1
+}
