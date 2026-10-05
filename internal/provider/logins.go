@@ -10,6 +10,8 @@ package provider
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,6 +59,12 @@ type Login struct {
 }
 
 type savedLogin struct {
+	// ID is the account's stable id (#905): set once it is written, and
+	// kept as it is when the account is renamed or its plan changes — a
+	// gateway key held to accounts names it by this, not by a name that
+	// moves. Until the logins are next written, one made of the name
+	// stands in, so an entry made before stands.
+	ID        string    `json:"id,omitempty"`
 	// Order is the user-arranged routing order within this agent. Zero keeps
 	// the original alphabetical order for accounts not arranged yet.
 	Order     int       `json:"order,omitempty"`
@@ -111,6 +119,30 @@ var (
 
 // switchable agents: those whose sign-in magpie can save and put back.
 var loginAgents = []string{"claude", "codex"}
+
+// loginID is the account's stable id (#905): the one saved with it, or a
+// stand-in made of its name until the logins are next written — set then,
+// and kept through renames.
+func loginID(l savedLogin) string {
+	if l.ID != "" {
+		return l.ID
+	}
+	sum := sha256.Sum256([]byte("magpie login\n" + l.Agent + "\n" + accountKey(l.User)))
+	return hex.EncodeToString(sum[:8])
+}
+
+// LoginID is the stable id of an agent's account known by its name
+// (#905): the login's, kept through renames, or one made of the name
+// for an account whose logins haven't been written since — and for an
+// agent that keeps its accounts elsewhere, made of the name always.
+func LoginID(agent, user string) string {
+	for _, l := range readLogins() {
+		if l.Agent == agent && accountKey(l.User) == accountKey(user) {
+			return loginID(l)
+		}
+	}
+	return loginID(savedLogin{Agent: agent, User: user})
+}
 
 func loginsPath() string { return filepath.Join(filepath.Dir(Path()), "logins.json") }
 
@@ -169,6 +201,11 @@ func keepUnreadLogins(path string) {
 }
 
 func writeLogins(ls []savedLogin) error {
+	// every account gets its stable id before it is written (#905): the
+	// one it has, or the stand-in made of its name, there to stay
+	for i := range ls {
+		ls[i].ID = loginID(ls[i])
+	}
 	sort.SliceStable(ls, func(i, j int) bool {
 		if ls[i].Agent != ls[j].Agent {
 			return ls[i].Agent < ls[j].Agent

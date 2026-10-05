@@ -238,6 +238,8 @@ magpie gateway-key limit <id>          # limit, used, left and reset
 magpie gateway-key limit <id> off      # no limit
 magpie gateway-key models <id> openai/gpt-5 anthropic/*   # only these models
 magpie gateway-key models <id> all     # every model
+magpie gateway-key accounts <id> codex/me@example.com   # only these accounts
+magpie gateway-key accounts <id> all    # every account
 ```
 
 Each gateway key can have its own **limit**: a token total, an estimated
@@ -271,6 +273,29 @@ Gemini lists, a routing group it doesn't name only when it may use every
 member, and is refused any other model with a 403 in the API's error shape
 before a provider is asked; a fallback it may not use is skipped. A key with
 no models listed may use every model.
+
+A gateway key can also be held to some **accounts** (#905): the accounts
+and keys its requests may use, picked in the same menu after the models —
+an account by who is signed in, a key by its fingerprint — or with
+`magpie gateway-key accounts <id> codex/me@example.com openai/<key id>`
+(`all` takes the restriction off). The list holds a key to some accounts
+**of the providers it names**: a provider it names no account of, the key
+uses as it always did. The list keeps an account by its stable id, kept
+through renames, shown by who is signed in; one gone later — a key
+rotated, an account signed out, an account of an agent that keeps no
+logins renamed — is kept as it is, matching nothing, so the key is held
+closer, never wider. A routing group the key names is its members'
+through the accounts it may use only: naming a group is not naming its
+accounts, and magpie's own calls for the key — a web search, a picture
+described, a Codex title — are of the models the user picked, but their
+spend lands on an account, so the accounts hold them too. When every
+account or key behind a model is one the key may not use, the request is
+refused with a 403 in the API's own error shape naming the model and the
+accounts it may use, before a provider is asked — after a usage cap's 429
+and before an account barred for the model's — and `/v1/models` lists the
+key only the models an account or key it may use serves, the Routing
+view's left-out list marking what the key held out. A key with no
+accounts listed may use every account, as keys always did.
 
 While LAN sharing is enabled, remote requests require an enabled gateway key
 sent as Bearer, `x-api-key`, `x-goog-api-key` or `?key=`. Loopback remains

@@ -194,6 +194,9 @@ type Weighed struct {
 	// Barred: left out as the user set it not to serve the model, its
 	// own list of models leaving it out (#474)
 	Barred bool `json:"barred,omitempty"`
+	// Held: left out as the gateway key asking may not use its account or
+	// key (#905)
+	Held bool `json:"held,omitempty"`
 	// Capped: left out as held at the usage cap the user set on the
 	// account, this cap in percent; Used is then its fullest window's
 	// share, CapBack when the last window at or past it renews

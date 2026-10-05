@@ -1968,6 +1968,9 @@ func pinTo(want string, cands []candidate, pl planned) ([]candidate, planned, in
 		return nil, pl, http.StatusTooManyRequests, AccountHeader + ": " + strings.Join(rests, "; ") + "; no other account is tried in its place"
 	}
 	for _, w := range pl.left {
+		if match(w) && w.Held {
+			return nil, pl, http.StatusForbidden, fmt.Sprintf("%s: the gateway key may not use %s's account", AccountHeader, w.Who)
+		}
 		if match(w) && w.Capped > 0 {
 			msg, _ := cappedError(w.Model, []Weighed{w}, time.Now())
 			return nil, pl, http.StatusTooManyRequests, AccountHeader + ": " + msg + "; no other account is tried in its place"

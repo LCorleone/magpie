@@ -868,6 +868,12 @@ func (s *Server) countOn(w http.ResponseWriter, r *http.Request, p provider.Prov
 				counts = append(counts, c)
 			}
 		}
+		// the accounts or keys the calling key may not use are left out of
+		// the counts too (#905): counted on one it may, and where it may
+		// use none, the local estimate below says the count
+		if who, held := accountHolds(r); held {
+			counts = slices.DeleteFunc(counts, func(c candidate) bool { return !accountAllowed(who, c) })
+		}
 	}
 	// the names in force, read at most once however many candidates are
 	// counted, and not at all where there are none
@@ -1202,6 +1208,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// a gateway key held to some models (#882) is refused another, or a
 	// group it doesn't name with one it may not use in it
 	keyWho, keyHeld := keyHolds(r)
+	_, accHeld := accountHolds(r)
+	chose, _ := r.Context().Value(magpieChoseKey{}).(bool)
 	if keyHeld && (isGroup && !groupAllowed(keyWho, g, ms) || !isGroup && !modelAllowed(keyWho, p, model)) {
 		call.Status, call.Error = 403, "model not allowed for the gateway key"
 		writeError(w, from, 403, keyModelError(keyWho, call.Model))
@@ -1327,15 +1335,23 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	if sealedTask {
 		cands, pl = sealedReaders(cands, pl)
 	}
-	if keyHeld {
+	var accountHeld bool // every candidate was an account or key the calling key may not use
+	if keyHeld || accHeld {
+		who := keyWho
 		var members map[string]bool
-		if isGroup {
+		if chose {
+			// magpie's own call for the key — a web search, a picture
+			// described, a Codex title: of the models the user picked, so
+			// the models don't hold it, but the spend lands on an account,
+			// and the accounts hold it too
+			who.Models = nil
+		} else if isGroup {
 			members = groupKeeps(keyWho, g, ms)
 		}
-		cands = allowedCandidates(keyWho, cands, members)
+		cands, pl, accountHeld = allowedCandidates(who, cands, pl, members)
 	}
 	if len(cands) == 0 && slices.ContainsFunc(pl.left, func(w Weighed) bool { return w.Capped > 0 }) &&
-		!slices.ContainsFunc(pl.left, func(w Weighed) bool { return !w.Barred && w.Capped == 0 }) {
+		!slices.ContainsFunc(pl.left, func(w Weighed) bool { return !w.Barred && !w.Held && w.Capped == 0 }) {
 		// every account there is is held at its usage cap: used up, as far
 		// as routing goes, until a window renews
 		msg, back := cappedError(call.Model, pl.left, time.Now())
@@ -1344,6 +1360,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		}
 		call.Status, call.Error = 429, "every account at its usage cap"
 		writeError(w, from, 429, msg)
+		turnedAway()
+		return
+	}
+	if len(cands) == 0 && accountHeld {
+		// every account or key the model had is one the calling key may
+		// not use (#905), the plan's left saying so: told before the barred
+		// and ready ones it may also have
+		call.Status, call.Error = 403, "every account outside the key's accounts"
+		writeError(w, from, 403, keyAccountsError(keyWho, call.Model))
 		turnedAway()
 		return
 	}
