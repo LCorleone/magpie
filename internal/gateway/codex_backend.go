@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/yetone/magpie/internal/access"
 	"github.com/yetone/magpie/internal/codexcat"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/usage"
@@ -110,6 +111,14 @@ func (s *Server) codexBackend(w http.ResponseWriter, r *http.Request) {
 		}
 		body = boundCallIDs(callItemIDs(body))
 		if rest == "/responses/compact" {
+			// a key held to some accounts (#905) may not spend the sign-in
+			// compaction still relays on: refused as its turns are (#967),
+			// with nothing asked of OpenAI — and refused when the sign-in
+			// can't be shown to be the key's, switched off or gone
+			if who, held := compactSigninHeld(r, model); held {
+				writeError(w, provider.Responses, 403, compactHeldError(who, model))
+				return
+			}
 			break // preserve native compaction's existing passthrough
 		}
 		body, _ = codexInput(body, false)
@@ -245,6 +254,41 @@ func codexReader(r *http.Request) (io.ReadCloser, error) {
 	}
 	r.Header.Del("Content-Encoding")
 	return rd, nil
+}
+
+// compactSigninHeld is the calling key when its accounts (#905) hold a
+// native compaction off the account Codex is signed in to. Compaction
+// relays as it came (#876, the encrypted history in it readable only by
+// the ChatGPT backend that sealed it), so it spends that sign-in with
+// nothing of the key asked — and the gate fails closed: a held key may
+// compact only where the sign-in can be shown to be one of the key's
+// accounts (AllowsAccount), so a Codex switched off in magpie, or
+// signed in to ChatGPT nowhere magpie can resolve, is refused as an
+// account the key may not use is, the relay reaching the sign-in all
+// the same. Codex signed in with its own API key (auth.json's
+// auth_mode) spends no account the key's list governs, and is the one
+// allowance. A key held to some models alone (#882) still compacts as
+// it always did, its holds asked on /responses where its turns go.
+func compactSigninHeld(r *http.Request, model string) (access.Identity, bool) {
+	who, held := accountHolds(r)
+	if !held || provider.CodexAPIKeySignedIn() {
+		return who, false
+	}
+	p, _, ok := provider.Resolve("codex/" + model)
+	if !ok || p.Account == nil || p.Account.Agent != "codex" || !who.AllowsAccount(p.ID, p.AccountID()) {
+		return who, true
+	}
+	return who, false
+}
+
+// compactHeldError is what a native compaction is refused with on a key
+// whose accounts (#905) don't take in the sign-in Codex compacts on:
+// native compaction has no other route — the encrypted history in the
+// request is bound to that account — so the message says the two ways
+// out, not the accounts alone.
+func compactHeldError(who access.Identity, model string) string {
+	return fmt.Sprintf("Native compaction for %s goes through the account Codex is signed in to, which the gateway key %q may not use; it may use %s. Native compaction has no other route: add the signed-in account to the key in magpie's Gateway page, or use one of magpie's models, whose compaction goes through a compaction_trigger on /responses and the key's accounts.",
+		model, who.KeyName, keyAccountNames(who))
 }
 
 // codexAccounts is what a request for one of Codex's own models is served
