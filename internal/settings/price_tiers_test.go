@@ -32,7 +32,7 @@ func TestModelPriceTiers(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"input":1,"output":2,"cache_read":0.1,"cache_write":0}`), &old); err != nil {
 		t.Fatal(err)
 	}
-	if got, bad := old.Price(); bad != "" || !got.Same(catalog.Price{Input: 1, Output: 2, CacheRead: 0.1}) || got.OneHour() != 2 {
+	if got, bad := old.Price(); bad != "" || !got.Same(catalog.Price{Input: 1, Output: 2, CacheRead: 0.1}) || got.OneHour() != 0 {
 		t.Errorf("an old price = %+v, %q", got, bad)
 	}
 	if b, _ := json.Marshal(StatedPrice(catalog.Price{Input: 1, Output: 2})); strings.Contains(string(b), "cache_write_1h") || strings.Contains(string(b), "tiers") {

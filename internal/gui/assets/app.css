@@ -162,6 +162,9 @@ body.window.mac .top { padding-left: calc(96px / var(--zoom, 1)); height: calc(5
 body.window.mac .seg { top: calc(50% + 1px / var(--zoom, 1)); } /* 50% centres in the padding box; the 2px top padding puts the flex row a pixel lower */
 .brand { display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: .01em; }
 body.window:not(.mac):not(.linux):not(.web) .brand { display: none; } /* Windows' title bar above already shows the icon and the name; a browser tab has no title bar of the app's */
+/* app.js removes these controls later; keep them out of the first paint too. */
+body.window :is(#open, #openMain, #quit),
+body:not(.window.linux) #winclose { display: none; }
 /* Linux: the header is the title bar, so it closes the window too — round,
    as GNOME draws its close button, and set a little apart from the icons */
 .icon.winclose { align-self: center; width: 22px; height: 22px; margin-left: 8px; border-radius: 50%; background: var(--pill); color: var(--fg-2); }
@@ -314,6 +317,11 @@ body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scr
 body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-thumb { background: var(--faint); border: 2px solid transparent; border-radius: 8px; background-clip: padding-box; }
 body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-thumb:hover { background-color: var(--muted); }
 body.mac :is(.view, .modal .dialog, .modal .editor.framed > .ebody)::-webkit-scrollbar-corner { background: transparent; }
+/* WebKit lays a framed editor's grid out at the full width and then lets
+   the 8px bar take its right edge, so a body that scrolled ran 8px wide
+   and scrolled sideways; the bar's room is always kept, out of the right
+   padding, so the fields end where they did */
+body.mac .modal .editor.framed > .ebody { overflow-y: scroll; padding-right: 10px; }
 .list { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none; }
 body.panel .list { border: 0; border-radius: 10px; box-shadow: var(--card-edge); }
 .row { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 5px 9px 5px 11px; }
@@ -626,6 +634,13 @@ body.window .field.solo { grid-column: auto; }
 .quota-curve .qc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10.5px; color: var(--muted); }
 .quota-curve .qc-range { font-size: 10px; color: var(--faint); }
 .quota-curve .qc-plot { display: block; width: 100%; height: 52px; margin-top: 5px; overflow: hidden; }
+/* a click makes a curve larger, another back (TJHHHH on Discord) */
+.quota-curve .qc-plot { cursor: zoom-in; transition: height .15s ease; }
+.quota-curve.big .qc-plot { height: 168px; cursor: zoom-out; }
+.quota-curve .qc-plot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+@media (prefers-reduced-motion: reduce) { .quota-curve .qc-plot { transition: none; } }
+.balance-curve .qc-range { color: var(--muted); }
+.balance-curve .bc-pace { color: var(--faint); }
 .qc-grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .qc-line { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 /* a window far shorter than the span drawn (a 5-hour one over a week) is a
@@ -688,7 +703,9 @@ body.window .field.solo { grid-column: auto; }
    card's other lines do (#840) */
 .quota-refresh { display: inline-flex; align-items: center; justify-content: center; width: 0; height: 14px; margin: 0; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--faint); vertical-align: -3px; opacity: 0; overflow: hidden; cursor: pointer; transition: width .12s, margin .12s, opacity .12s; }
 .quota-refresh svg { flex: none; }
-.subscription-card:hover .quota-refresh, .quota-refresh:focus-visible, .quota-refresh.busy { width: 14px; margin: 0 3px 0 -2px; opacity: 1; }
+.subscription-card:hover .quota-refresh, .quota-refresh.busy { width: 14px; margin: 0 3px 0 -2px; opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.quota-refresh:focus-visible { width: 14px; margin: 0 3px 0 -2px; opacity: 1; }
 .quota-refresh:hover { color: var(--fg); background: var(--pill-hover); }
 .quota-refresh.busy { cursor: default; }
 .quota-refresh.busy svg { animation: spin .8s linear infinite; }
@@ -1119,7 +1136,9 @@ details.cx-part[open] > summary .cx-h { margin-bottom: 2px; }
 /* a row of the Usage page's list opens on the Sessions page (#752) */
 .row.sess.sess-link { cursor: pointer; }
 .row.sess .sess-go { flex: none; display: inline-flex; color: var(--faint); }
-.row.sess.sess-link:hover .sess-go, .row.sess.sess-link:focus-visible .sess-go { color: var(--fg-2); }
+.row.sess.sess-link:hover .sess-go { color: var(--fg-2); }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.row.sess.sess-link:focus-visible .sess-go { color: var(--fg-2); }
 .sess-all { flex: none; white-space: nowrap; }
 .sess-resume { flex: none; height: 24px; padding: 0 10px; border-radius: 7px; border: 0; background: var(--pill); color: var(--fg); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
 .sess-resume:hover { background: var(--pill-hover); }
@@ -1375,6 +1394,11 @@ body.panel .foot { min-height: 0; padding: 5px 8px 7px 14px; border-top: 1px sol
 /* several accounts: the button opening the ones in brief, in the head */
 .subscription-card .quota-more { margin: -4px -7px -4px auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--muted); }
 .subscription-card .quota-more:hover { color: var(--fg); }
+/* a provider's keys: their sum in the head, the rest of them behind a button at the foot */
+.subscription-head .quota-sum { margin-left: auto; flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.subscription-card .quota-sum + .quota-more { margin-left: 4px; }
+.subscription-card .quota-keys-more { display: block; margin: 8px 0 -4px -7px; max-width: calc(100% + 7px); overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--muted); }
+.subscription-card .quota-keys-more:hover { color: var(--fg); }
 .text { font-size: 12px; color: var(--ctl-fg); padding: 3px 7px; border-radius: 6px; transition: background .12s, color .12s; white-space: nowrap; }
 .text:hover { color: var(--fg); background: var(--pill); }
 .text.action { height: 27px; padding: 0 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg-2); box-shadow: 0 1px 1px rgba(0, 0, 0, .04); display: inline-flex; align-items: center; justify-content: center; }
@@ -1442,8 +1466,10 @@ body.window .foot { padding-left: 18px; }
 .status.err { color: var(--red); }
 .status.warn { color: var(--amber); }
 /* an outcome (Refresh, Test models…) stands out from the corner it is in:
-   a solid pill in its colour, over a window the desktop shows through */
-.status.ok, .status.err, .status.warn { font-size: 12.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }
+   a solid pill in its colour, over a window the desktop shows through;
+   it fits the footer's 22px, so its coming doesn't make the page above
+   it shorter and move it */
+.status.ok, .status.err, .status.warn { font-size: 12.5px; line-height: 16px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, var(--bg)); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent); }
 .status.lift { position: fixed; z-index: 21; font-size: 12.5px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, var(--card)); left: 50%; bottom: 18px; transform: translateX(-50%); max-width: calc(100vw - 32px); box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent), 0 6px 20px rgba(0, 0, 0, .28); animation: fade-in .2s var(--ease); }
 
 /* ---- picker popover ------------------------------------------------------- */
@@ -1822,7 +1848,6 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .accts .keys-tools .grow { flex: 1; }
 .accts .keys-tools .keys-filter { flex: 1 1 220px; max-width: 320px; height: 26px; padding: 0 8px; font-size: 12px; }
 .accts .keys-tools .keys-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.accts .keys-tools .keys-remove[data-armed] { color: var(--red); background: var(--red-soft); }
 .accts .keys-tools + .acc { border-top: 0; }
 .accts > .keys-tools:first-child { border-top: 0; }
 .accts > .keys-none + .acc, .accts > .keys-rest + .acc { border-top: 1px solid var(--line-2); }
@@ -1867,14 +1892,18 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .acc .amodels:hover, .acc .amodels.open { color: var(--fg); background: var(--pill-hover); }
 /* an account's usage cap: as the models pill, shown on hover till one is set */
 .acc .acap { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 7px; font: inherit; font-size: 11px; color: var(--muted); border: 0; border-radius: 5px; background: none; box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; cursor: default; opacity: 0; transition: opacity .15s, background .12s, color .12s; }
-.acc:hover .acap, .acc .acap.open, .acc .acap:focus-visible, .acc .acap.set { opacity: 1; }
+.acc:hover .acap, .acc .acap.open, .acc .acap.set { opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.acc .acap:focus-visible { opacity: 1; }
 .acc .acap.set { color: var(--accent); background: var(--accent-soft); box-shadow: none; font-weight: 500; }
 .acc .acap:hover, .acc .acap.open { color: var(--fg); background: var(--pill-hover); }
 .acc .acap-in { width: 64px; }
 /* an account's or key's limit on requests at once (#892), and how many
    run and wait under it: shown on hover unless a limit applies */
 .acc .alane { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 7px; font: inherit; font-size: 11px; color: var(--muted); border: 0; border-radius: 5px; background: none; box-shadow: inset 0 0 0 1px var(--line); white-space: nowrap; cursor: default; opacity: 0; transition: opacity .15s, background .12s, color .12s; font-variant-numeric: tabular-nums; }
-.acc:hover .alane, .acc .alane.open, .acc .alane:focus-visible, .acc .alane.set { opacity: 1; }
+.acc:hover .alane, .acc .alane.open, .acc .alane.set { opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.acc .alane:focus-visible { opacity: 1; }
 .acc .alane.set { color: var(--fg); background: var(--pill-hover); box-shadow: none; }
 .acc .alane.busy-lane { color: var(--accent); background: var(--accent-soft); font-weight: 500; }
 .acc .alane.queued { color: var(--amber); }
@@ -1896,14 +1925,22 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
    badge gives its own up first. First and Make first stay one line */
 .accts.keys .acc .plan { flex: 0 1 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; }
 .accts.keys .acc > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.accts.keys .acc:not(:hover) > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet):not(:focus-visible, .open) { max-width: 0; padding-left: 0; padding-right: 0; box-shadow: none; }
-.accts.keys .acc > :is(.amodels, .alane):not(.set):not(:focus-visible, .open) { flex-shrink: 10000; }
+.accts.keys .acc:not(:hover) > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet):not(.open):not(:focus-visible) { max-width: 0; padding-left: 0; padding-right: 0; box-shadow: none; }
+.accts.keys .acc > :is(.amodels, .alane):not(.set):not(.open):not(:focus-visible) { flex-shrink: 10000; }
 /* the limit pill unset on a key's row is quiet text, as the row's other
    hover-only controls: no padding to keep, and hidden it takes back the
    gap before it too (#892) */
-.accts.keys .acc > .alane:not(.set):not(:focus-visible, .open) { padding: 0; box-shadow: none; background: none; }
-.accts.keys .acc:not(:hover) > .alane:not(.set):not(:focus-visible, .open) { margin-left: -9px; }
+.accts.keys .acc > .alane:not(.set):not(.open):not(:focus-visible) { padding: 0; box-shadow: none; background: none; }
+.accts.keys .acc:not(:hover) > .alane:not(.set):not(.open):not(:focus-visible) { margin-left: -9px; }
 .accts.keys .acc > :is(.proto, .text.quiet) { flex-shrink: 0; }
+/* Safari before 15.4 has no :focus-visible and drops the rules above
+   whole: there a focused control stays out on :focus instead */
+@supports not selector(:focus-visible) {
+  .accts.keys .acc:not(:hover) > :is(.amodels:not(.set), .proto:not(.set), .alane:not(.set), .text.quiet):not(.open):not(:focus) { max-width: 0; padding-left: 0; padding-right: 0; box-shadow: none; }
+  .accts.keys .acc > :is(.amodels, .alane):not(.set):not(.open):not(:focus) { flex-shrink: 10000; }
+  .accts.keys .acc > .alane:not(.set):not(.open):not(:focus) { padding: 0; box-shadow: none; background: none; }
+  .accts.keys .acc:not(:hover) > .alane:not(.set):not(.open):not(:focus) { margin-left: -9px; }
+}
 .accts.keys .acc .using, .accts.keys .acc > .text:not(.quiet) { flex: none; white-space: nowrap; }
 #gatewayKeys .acc { min-width: 0; }
 #gatewayKeys .acc .plan { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -2183,15 +2220,17 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
   pointer-events: none;
 }
 .segs .thumb { border-radius: 5px; }
-/* a strip too wide for the window scrolls in itself: the regions, and
-   Connect's five APIs on a narrow one */
-.segs.regions, .connect .segs { max-width: 100%; overflow-x: auto; }
+/* a strip too wide for the window scrolls in itself: the regions,
+   Connect's five APIs on a narrow one, and Usage → Sessions' agents,
+   which #929 left widening the whole page until its last agent's
+   filter was only reachable by dragging the page sideways */
+.segs.regions, .connect .segs, #sessAgent { max-width: 100%; overflow-x: auto; }
 /* no scrollbar-width here: Chromium (WebView2) then drops every
    ::-webkit-scrollbar rule and draws Windows' classic bar, arrows and all,
    under the strip; the app's thin thumb instead, slimmer still */
-:where(body:not(.mac)) :is(.segs.regions, .connect .segs)::-webkit-scrollbar { height: 6px; }
-:where(body:not(.mac)) :is(.segs.regions, .connect .segs)::-webkit-scrollbar-thumb { border-width: 1px; }
-.segs.regions .opt, .connect .segs .opt { flex: none; }
+:where(body:not(.mac)) :is(.segs.regions, .connect .segs, #sessAgent)::-webkit-scrollbar { height: 6px; }
+:where(body:not(.mac)) :is(.segs.regions, .connect .segs, #sessAgent)::-webkit-scrollbar-thumb { border-width: 1px; }
+.segs.regions .opt, .connect .segs .opt, #sessAgent .opt { flex: none; }
 /* an installed list's order (#481): small, beside the list's heading */
 .segs.sortby { align-self: center; flex: none; }
 .segs.sortby .opt { height: 20px; padding: 0 8px; font-size: 11px; }
@@ -2508,6 +2547,17 @@ html.theming, html.theming *, html.theming *::before, html.theming *::after {
   transition: background-color .35s var(--ease), background .35s var(--ease), color .35s var(--ease), border-color .35s var(--ease), box-shadow .35s var(--ease) !important;
 }
 
+/* Confirmation uses the top layer so an open editor remains intact underneath. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.action-confirm { --confirm-fill: #c73535; --confirm-fg: #ffffff; position: fixed; inset: 0; margin: auto; max-height: calc(100vh - 32px); overflow-y: auto; width: min(420px, calc(100vw - 32px)); padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--fg); box-shadow: 0 24px 60px rgba(0, 0, 0, .32); font: inherit; }
+.action-confirm .text.danger-fill { background: var(--confirm-fill); color: var(--confirm-fg); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .action-confirm { --confirm-fill: var(--red); --confirm-fg: #14142a; } }
+:root[data-theme="dark"] .action-confirm { --confirm-fill: var(--red); --confirm-fg: #14142a; }
+.action-confirm::backdrop { background: rgba(0, 0, 0, .32); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.action-confirm h2 { margin: 0 0 12px; font-size: 16px; overflow-wrap: anywhere; }
+.action-confirm p { margin: 0 0 20px; color: var(--fg-2); line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.action-confirm .bar { display: flex; align-items: center; gap: 10px; margin: 0; }
+@media (pointer: coarse) { .action-confirm button { min-height: 44px; min-width: 44px; } }
 /* ---------- modal ---------- */
 .modal {
   position: fixed; inset: 0; z-index: 20;
@@ -2705,7 +2755,9 @@ body.panel .modal { padding: 16px 12px; }
    with 3.5px between them the right column was cut in half (Hu9956, #842) */
 .subscription-head .us-handle { position: relative; width: 24px; height: 24px; margin: -4px -3px; }
 .subscription-head .us-handle::before { content: ""; position: absolute; left: -8px; top: 50%; width: 6px; height: 11px; margin-top: -5.5px; background: radial-gradient(circle, var(--muted) .9px, transparent 1.2px) 0 0 / 3px 3.75px; opacity: 0; transition: opacity .15s; }
-.subscription-card:is(:hover, .dragging) .us-handle::before, .us-handle:focus-visible::before { opacity: 1; }
+.subscription-card:is(:hover, .dragging) .us-handle::before { opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.us-handle:focus-visible::before { opacity: 1; }
 .subscription-usage.sorting { user-select: none; -webkit-user-select: none; }
 .subscription-usage.sorting > .subscription-card { transition: transform .22s cubic-bezier(.22, 1, .36, 1); }
 .subscription-usage.sorting .us-handle { cursor: grabbing; }
@@ -2887,6 +2939,7 @@ body.window .row.agent .who.with-models { flex-wrap: wrap; row-gap: 0; }
 .am-reset { border: 0; background: none; padding: 2px 4px; border-radius: 5px; color: var(--fg-2); font: inherit; font-size: 11.5px; cursor: pointer; }
 .am-reset:hover:not(:disabled) { color: var(--accent); }
 .am-reset:disabled { color: var(--faint); cursor: default; }
+.am-reset[data-armed] { color: var(--red); background: var(--red-soft); }
 .am-dot { color: var(--faint); }
 /* Codex's list in the order it shows it (#855): the whole list, dragged by
    any row; its grip shows only on the row under the pointer */
@@ -2894,7 +2947,9 @@ body.window .row.agent .who.with-models { flex-wrap: wrap; row-gap: 0; }
 .am-order { padding-top: 4px; }
 .am-rows.am-order .am-mr { padding-left: 14px; cursor: grab; user-select: none; -webkit-user-select: none; }
 .am-or .grip { flex: none; width: 6px; height: 11px; margin-right: -4px; background: radial-gradient(circle, var(--muted) .9px, transparent 1.2px) 0 0 / 3px 3.75px; opacity: 0; transition: opacity .15s; }
-.am-or:is(:hover, :focus-visible, .dragging) .grip { opacity: 1; }
+.am-or:is(:hover, .dragging) .grip { opacity: 1; }
+/* apart: Safari before 15.4 drops a whole selector list with :focus-visible in it */
+.am-or:focus-visible .grip { opacity: 1; }
 @media (hover: none) { .am-or .grip { opacity: 1; } }
 .am-or .ix { flex: none; min-width: 16px; font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; text-align: right; }
 .am-order.sorting .am-or { transition: transform .22s cubic-bezier(.22, 1, .36, 1); cursor: grabbing; }

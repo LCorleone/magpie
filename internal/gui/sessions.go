@@ -175,7 +175,7 @@ func sessionRoutes(mux *http.ServeMux, w Windows) {
 			fail(rw, errors.New("no such session"))
 			return
 		}
-		if err := openTerminal(run,settings.Load().SessionTerminal); err != nil {
+		if err := openTerminal(run, settings.Load().SessionTerminal); err != nil {
 			fail(rw, err)
 			return
 		}

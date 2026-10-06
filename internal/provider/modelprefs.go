@@ -424,7 +424,7 @@ func (p Provider) ModelAPI(model string) (Protocol, bool) {
 // the model its own name back, Efforts [] all its levels, OwnImages the
 // vendor's answer for whether it sees images, API "" every API the
 // provider has for it, Same "" its own id to merge it with other
-// vendors' by (see SetModelSame), and OwnPrice its list price again in
+// vendors' by (see setModelSame), and OwnPrice its list price again in
 // place of Price, what the user said it costs (SetModelPrice, #819).
 type ModelPref struct {
 	Name      *string        `json:"name,omitempty"`
@@ -439,7 +439,7 @@ type ModelPref struct {
 
 // SetModelPrefs makes the changes to a provider's models, by model id, as
 // SetModelName, SetModelEfforts, SetModelImage, SetModelAPI and
-// SetModelSame do, and tells the agents
+// setModelSame do, and tells the agents
 // once, after them all, rather than once a change. It stops at the first
 // that fails, telling the agents of those made before it.
 func SetModelPrefs(pid string, prefs map[string]ModelPref) error {
@@ -497,18 +497,13 @@ func SetModelPrefs(pid string, prefs map[string]ModelPref) error {
 	return touchedIf(changed, err)
 }
 
-// SetModelSame says which model a provider's model, spelt "provider/model",
+// setModelSame says which model a provider's model, spelt "provider/model",
 // is the same as, for one a vendor names its own way (Volcengine Ark's
 // dated ids, kyzhouxu on #583): the routing groups magpie finds merge it
 // with that model from every other provider (autoGroups). The name is a
 // model's id as any vendor spells it ("deepseek-v4.1-flash", or with a
 // vendor's prefix); "" — or a name that is the model's own however spelt —
-// merges it by its own id again. The agents are told, the groups they are
-// shown having changed.
-func SetModelSame(ref, same string) error {
-	return touchedIf(setModelSame(ref, same))
-}
-
+// merges it by its own id again.
 func setModelSame(ref, same string) (bool, error) {
 	p, model, err := splitRef(ref)
 	if err != nil {
@@ -702,6 +697,22 @@ func SetCodexAgentsV1(on bool) error {
 		return nil
 	}
 	s.CodexAgentsV1 = on
+	if err := settings.Save(s); err != nil {
+		return err
+	}
+	catalog.Touched()
+	return nil
+}
+
+// SetCodexAutoReview sets settings.CodexAutoReview, the model Codex's
+// auto-review runs on ("" for Codex's own pick), and has Codex's lists
+// written and asked for again.
+func SetCodexAutoReview(id string) error {
+	s := settings.Load()
+	if s.CodexAutoReview == id {
+		return nil
+	}
+	s.CodexAutoReview = id
 	if err := settings.Save(s); err != nil {
 		return err
 	}

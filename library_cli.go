@@ -424,6 +424,9 @@ func rtkCmd(args []string) error {
 	for _, a := range v.Agents {
 		mark := muted.Render("off")
 		note := ""
+		if a.NoHook {
+			mark, note = muted.Render(" – "), muted.Render(" — "+a.Blocked)
+		}
 		if a.On {
 			mark = green.Render("on ")
 			if v.Path == "" {

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // #896: skills are given as links or as copies, for every agent or one;
@@ -92,21 +93,15 @@ func TestSkillHow(t *testing.T) {
 	}
 
 	// an edit made in claude's copy isn't lost when it is a link again:
-	// it is kept with the backups
+	// the library takes it (takeEdits), and the link shows it
+	time.Sleep(20 * time.Millisecond)
 	write(t, filepath.Join(cl, "notes.md"), "my notes\n")
 	ok(t)(SetSkillHow("", HowLink))
 	if !isLink(t, cl) {
 		t.Fatal("claude isn't a link again")
 	}
-	var kept []string
-	filepath.WalkDir(BackupDir(), func(p string, d fs.DirEntry, err error) error {
-		if err == nil && d.Name() == "notes.md" {
-			kept = append(kept, p)
-		}
-		return nil
-	})
-	if len(kept) != 1 || read(t, kept[0]) != "my notes\n" {
-		t.Errorf("the edited copy wasn't kept: %v", kept)
+	if read(t, filepath.Join(src, "pdf/notes.md")) != "my notes\n" || read(t, filepath.Join(cl, "notes.md")) != "my notes\n" {
+		t.Error("the edit in the copy wasn't taken into the library")
 	}
 	// codex goes the library's way again
 	ok(t)(SetSkillHow("codex", HowCopy))

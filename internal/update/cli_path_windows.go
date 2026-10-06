@@ -22,8 +22,12 @@ func installedShells() []cliShell {
 func cliDir(exe string, _ []string, _ string) string { return filepath.Dir(exe) }
 
 // cliPlace puts dir first in the user's PATH in the registry, where a
-// terminal opened from now on takes it up, and tells Explorer.
-func cliPlace(_, dir string) error {
+// terminal opened from now on takes it up, and tells Explorer; an app not
+// named magpie.exe gets its magpie.cmd there first (writeShim).
+func cliPlace(exe, dir string) error {
+	if _, err := writeShim(exe); err != nil {
+		return err
+	}
 	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.QUERY_VALUE|registry.SET_VALUE)
 	if err != nil {
 		return err

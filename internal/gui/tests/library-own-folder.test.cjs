@@ -104,7 +104,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.route("http://magpie.test/**", server(lang, posts));
       await page.goto("http://magpie.test/");
       await page.locator('button[data-view="library"]').click();
-      await page.locator("#view-library .lib-row").first().waitFor();
+      await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
+      // the page's entrance played out: a button still sliding in isn't
+      // stable, and Playwright scrolls the view to click it
+      await page.waitForFunction(() => !document.querySelector("#view-library").getAnimations({ subtree: true }).some((a) => a.playState === "running" && isFinite(a.effect.getComputedTiming().endTime)));
       return page;
     };
     const row = (page, name) => page.locator("#view-library .lib-row").filter({ has: page.locator(".name", { hasText: new RegExp("^" + name) }) });

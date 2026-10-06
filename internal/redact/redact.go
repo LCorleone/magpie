@@ -270,13 +270,6 @@ func placeholder(kind, v string) string {
 	return p
 }
 
-// Known says there are values to put back.
-func Known() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return len(values) > 0
-}
-
 // ---- masking --------------------------------------------------------------------
 
 type span struct {

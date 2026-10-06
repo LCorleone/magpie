@@ -181,6 +181,8 @@ func builtinLogins(agent string) (logins []Login, ok bool) {
 		logins = factoryLoginList()
 	case MiMoID:
 		logins = mimoLoginList()
+	case ChatGPTAPIID:
+		logins = siwcLoginList()
 	case "gemini", "antigravity":
 		logins = googleLoginList(agent)
 	case "cursor": // one account, the one cursor-agent is signed in to

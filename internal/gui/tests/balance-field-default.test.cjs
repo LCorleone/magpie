@@ -2,7 +2,8 @@
 // A custom provider's Balance field left empty shows, as its placeholder,
 // the field magpie reads from a Balance URL whose reply it knows (#881):
 // new-api's /api/usage/token and /api/user/self, a sub2api panel's
-// /api/v1/user/profile, OpenAI's old credit_grants; any other URL keeps
+// /api/v1/user/profile and its /v1/usage for a key, OpenAI's old
+// credit_grants; any other URL keeps
 // the example. The placeholder follows the URL as it is typed.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
@@ -59,6 +60,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     for (const [typed, want] of [
       ["https://relay.example.com/api/user/self/", "$data.quota / 500000"],
       ["https://panel.example.com/api/v1/user/profile", "$data.balance"],
+      ["https://panel.example.com/v1/usage", "$remaining"],
       ["https://relay.example.com/v1/dashboard/billing/credit_grants", "$total_available"],
       ["https://relay.example.com/whatever", "data.balance"],
       ["not a url", "data.balance"],

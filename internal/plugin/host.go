@@ -536,6 +536,11 @@ func changed() {
 // waiting for its browser) finishes them first, while the calls made
 // from now on go to the new one: a plugin updating never cuts a reply.
 func Restart() {
+	// the next host loads the plugins as they are now: what this magpie
+	// installed is not another magpie's change (checkList)
+	listSeen.Lock()
+	listSeen.stamp, listSeen.set = listStamp(), true
+	listSeen.Unlock()
 	hostMu.Lock()
 	h := current
 	current = nil

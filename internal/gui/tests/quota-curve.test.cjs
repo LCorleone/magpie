@@ -188,6 +188,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       // turned off in the window, the tray's line goes too, and stays gone
       const win = await panel.context().newPage();
       await win.route("**/*", serve(lang, "dark", false, data));
+      // a page of magpie's origin, only for its storage: served as a 404
+      // with no body, Chromium refused to open it (ERR_HTTP_RESPONSE_CODE_FAILURE)
+      await win.route("http://magpie.test/blank", (r) => r.fulfill({ contentType: "text/html", body: "<!doctype html><title>blank</title>" }));
       await win.goto("http://magpie.test/blank");
       await win.evaluate(() => localStorage.setItem("magpie.quotaRange", "off"));
       await panel.waitForFunction(() => !document.querySelector(".pq-spark"));

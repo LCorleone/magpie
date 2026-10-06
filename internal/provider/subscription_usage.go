@@ -87,6 +87,9 @@ type SubscriptionQuota struct {
 	// BalanceParts are the Balance's amounts each apart, when the balance
 	// field the user wrote has several or a percent (cardParts)
 	BalanceParts []BalancePart `json:"balanceParts,omitempty"`
+	// BalanceTrend is the Balance over time, as magpie read it, and when
+	// it runs out at that pace (balance_history.go)
+	BalanceTrend *BalanceTrend `json:"balanceTrend,omitempty"`
 	// Until is when the plan's paid time ends: it renews then when Renew
 	// is "auto", is over when "off", and either when "" (the vendor
 	// doesn't say which).
@@ -281,7 +284,7 @@ func fetchSubscriptionUsage(ctx context.Context) []SubscriptionQuota {
 		for _, p := range load().Providers {
 			hidden[p.ID] = hidden[p.ID] || p.ID != r.provider
 		}
-		for _, id := range []string{"claude", "cursor", "grok", "codex", "copilot", "kiro", "zcode", wbCN.id, wbAI.id, CommandCodePlanID, "qoder", QoderCNID, "zed", "devin", "factory", MiMoID, "gemini", "antigravity"} {
+		for _, id := range []string{"claude", "cursor", "grok", "codex", "copilot", "kiro", "zcode", wbCN.id, wbAI.id, CommandCodePlanID, "qoder", QoderCNID, "zed", "devin", "factory", MiMoID, ChatGPTAPIID, "gemini", "antigravity"} {
 			hidden[id] = hidden[id] || id != r.provider
 		}
 		for _, pp := range plugin.Cached() {
@@ -735,19 +738,6 @@ func elapsed(ws []QuotaWindow, now time.Time) []QuotaWindow {
 // claude-fable-5-1.
 func claudeScopeModel(name string) string {
 	return strings.NewReplacer(" ", "-", ".", "-").Replace(strings.ToLower(name))
-}
-
-type quotaWire struct {
-	Utilization float64 `json:"utilization"`
-	ResetsAt    string  `json:"resets_at"`
-}
-
-func (w quotaWire) window(name string) QuotaWindow {
-	out := QuotaWindow{Name: name, Used: w.Utilization}
-	if t, err := time.Parse(time.RFC3339, w.ResetsAt); err == nil {
-		out.ResetsAt = &t
-	}
-	return out
 }
 
 func codexSubscriptionUsage(ctx context.Context, path string) SubscriptionQuota {

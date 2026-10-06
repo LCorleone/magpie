@@ -56,12 +56,24 @@ func TestPriceTiers(t *testing.T) {
 }
 
 // Anthropic bills a 1-hour cache write at 2× input and a 5-minute one at
-// 1.25×: a call's 1-hour writes at theirs, the price's own else 2× input,
-// and a call from before the split was kept (none for 1 hour) as before.
+// 1.25×: a call's 1-hour writes at theirs, the price's own else the
+// 5-minute one (PAMI on Discord: not 2× input for a model with no 1-hour
+// writes at all), and a call from before the split was kept (none for 1
+// hour) as before. A Claude model's price is given 2× input.
 func TestCostSplit(t *testing.T) {
 	p := Price{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25}
-	if got, want := p.CostSplit(1000, 100, 0, 3000, 1000), (1000*5.0+100*25+2000*6.25+1000*10)/1e6; !near(got, want) {
-		t.Errorf("unset 1h: %v, want %v", got, want)
+	if got, want := p.CostSplit(1000, 100, 0, 3000, 1000), (1000*5.0+100*25+3000*6.25)/1e6; !near(got, want) {
+		t.Errorf("unset 1h: %v, want %v, every write at the 5-minute price", got, want)
+	}
+	c := p
+	OneHourFor("claude-sonnet-5-5", &c)
+	if got, want := c.CostSplit(1000, 100, 0, 3000, 1000), (1000*5.0+100*25+2000*6.25+1000*10)/1e6; !near(got, want) {
+		t.Errorf("claude unset 1h: %v, want %v", got, want)
+	}
+	g := p
+	OneHourFor("gpt-6-astra", &g)
+	if g.CacheWrite1h != 0 {
+		t.Errorf("gpt given a 1-hour write: %v", g.CacheWrite1h)
 	}
 	p.CacheWrite1h = 8
 	if got, want := p.CostSplit(1000, 100, 0, 3000, 1000), (1000*5.0+100*25+2000*6.25+1000*8)/1e6; !near(got, want) {

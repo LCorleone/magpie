@@ -2,9 +2,12 @@ package gateway
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -146,6 +149,11 @@ func chatParts(raw json.RawMessage) []Part {
 		ImageURL struct {
 			URL string `json:"url"`
 		} `json:"image_url"`
+		File struct {
+			FileData string `json:"file_data"`
+			FileID   string `json:"file_id"`
+			Filename string `json:"filename"`
+		} `json:"file"`
 	}
 	json.Unmarshal(raw, &items)
 	var out []Part
@@ -155,9 +163,35 @@ func chatParts(raw json.RawMessage) []Part {
 			out = append(out, Part{Kind: Text, Text: it.Text})
 		case "image_url":
 			out = append(out, imagePart(it.ImageURL.URL))
+		case "file":
+			if p, ok := chatFile(it.File.FileData, it.File.FileID, it.File.Filename); ok {
+				out = append(out, p)
+			}
 		}
 	}
 	return out
+}
+
+// chatFile is a Chat Completions file part (a PDF, say) as a file of the
+// request's, which a Gemini upstream is given as inline data and the
+// others are told of (attachmentText), rather than left out for the model
+// to answer as if it had read it (#934). Its data is a data: URL, or the
+// bare base64 some clients send; one named only by its OpenAI file id is
+// kept as that id.
+func chatFile(data, id, name string) (Part, bool) {
+	mt, _, _ := strings.Cut(mime.TypeByExtension(strings.ToLower(path.Ext(name))), ";")
+	switch {
+	case strings.HasPrefix(data, "data:"):
+		if p := imagePart(data); p.Data != "" {
+			return Part{Kind: File, MediaType: cmp.Or(p.MediaType, mt, "application/octet-stream"), Data: p.Data}, true
+		}
+	case data != "":
+		return Part{Kind: File, MediaType: cmp.Or(mt, "application/octet-stream"), Data: data}, true
+	}
+	if id != "" {
+		return Part{Kind: File, MediaType: cmp.Or(mt, "application/octet-stream"), URL: id}, true
+	}
+	return Part{}, false
 }
 
 // imagePart reads a data: URL into an inline image, or keeps the URL.

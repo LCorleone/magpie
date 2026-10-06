@@ -99,7 +99,7 @@ func BackAt(q SubscriptionQuota, now time.Time) time.Time {
 		if w.Aside || w.Model != "" || w.Used < 100 {
 			continue
 		}
-		at := time.Time{}
+		var at time.Time
 		switch {
 		case w.ResetsAt != nil:
 			at = *w.ResetsAt

@@ -106,6 +106,9 @@ type model struct {
 	// entry for it says: Ultra hands work to Codex's agents in V2
 	// alone, and a magpie-served lead writes their tasks as text.
 	MultiAgent string `json:"multi_agent_version,omitempty"`
+	// the model Codex's auto-review runs on, settings.CodexAutoReview
+	// (see AutoReview)
+	AutoReview string `json:"auto_review_model_override,omitempty"`
 }
 
 // Entries renders models as models.json entries, ranked after the first
@@ -126,6 +129,7 @@ func Entries(ms []catalog.Model, after int) []any {
 			if v1 {
 				Stamp(e)
 			}
+			AutoReview(e)
 			entries = append(entries, e)
 			continue
 		}
@@ -135,6 +139,7 @@ func Entries(ms []catalog.Model, after int) []any {
 			Shell: "unified_exec", Visibility: "list", InAPI: true, Priority: after + i + 1,
 			ApplyPatch: "freeform", Tools: []string{}, Modalities: []string{"text"},
 			Tiers: []tier{}, SearchTool: true, Parallel: true,
+			AutoReview: work.CodexAutoReview,
 		}
 		// Fast mode: a ChatGPT account's GPT model Codex has no entry for,
 		// or a group one is in, gets the tier Codex's own catalog gives its
@@ -291,6 +296,24 @@ func unstamp(e map[string]any, was string) {
 		delete(e, "multi_agent_version")
 	} else {
 		e["multi_agent_version"] = was
+	}
+}
+
+// Codex's auto-review (the guardian deciding an approval in the user's
+// place) runs on the auto_review_model_override of the conversation's
+// model's entry, else on codex-auto-review when the list has it, else on the
+// conversation's model at low effort (#938). With settings.CodexAutoReview
+// every entry magpie hands Codex names that model.
+
+// AutoReview has one of Codex's own entries name the auto-review model the
+// user picked. With none picked, one magpie put there before — a magpie id,
+// which has a "/" where OpenAI's slugs have none, kept in Codex's cache — is
+// taken out, and one OpenAI gave it is left.
+func AutoReview(e map[string]any) {
+	if v := settings.Load().CodexAutoReview; v != "" {
+		e["auto_review_model_override"] = v
+	} else if was, _ := e["auto_review_model_override"].(string); strings.Contains(was, "/") {
+		delete(e, "auto_review_model_override")
 	}
 }
 

@@ -39,7 +39,7 @@ func stopServing() {
 func startBackend() (gw *gateway.Server) {
 	gateway.Window = true // the routing this process serves is shown on its page
 	gw = serveGateway()
-	go watchGateway()
+	go watchGateway(backendCtx, gatewayWatch)
 	// Model lists are fetched, never compiled in: whatever the agents can see
 	// comes from the models.dev catalog plus each vendor's own /models answer.
 	// Keep both halves warm without making the user click anything.
@@ -63,14 +63,23 @@ func startBackend() (gw *gateway.Server) {
 	return gw
 }
 
-var gatewayWatch = 15 * time.Second
+// gatewayWatch is how often a magpie without the gateway looks for it gone.
+const gatewayWatch = 15 * time.Second
 
-// watchGateway takes the gateway up once the magpie that had it is gone.
-func watchGateway() {
+// watchGateway takes the gateway up once the magpie that had it is gone,
+// looking every so often until ctx ends: a watch that outlived it would
+// start a gateway after this one has stopped serving.
+func watchGateway(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
 	for {
-		time.Sleep(gatewayWatch)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
 		gatewayMu.Lock()
-		if served.Load() == nil && !gateway.Running() {
+		if ctx.Err() == nil && served.Load() == nil && !gateway.Running() {
 			serveGatewayLocked()
 		}
 		gatewayMu.Unlock()

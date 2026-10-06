@@ -93,7 +93,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // the other ways are still there and still sign in
         assert.equal(await box.locator("button[data-method]").count(), 2);
         const y = await page.evaluate(() => [scrollY, ...[...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => e.scrollTop)].join());
-        await box.locator('button[data-method="2"]').click();
+        // clicked where it is, as the reader does: Playwright's own scroll into
+        // view moved a 440px window's page by 3px before its click
+        const b = await box.locator('button[data-method="2"]').boundingBox();
+        await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
         await page.waitForTimeout(150);
         assert.deepEqual(asked, [{ provider: "zcode", method: 2, inputs: {} }]);
         assert.equal(await page.evaluate(() => [scrollY, ...[...document.querySelectorAll("*")].filter((e) => e.scrollTop).map((e) => e.scrollTop)].join()), y, "the click scrolled");

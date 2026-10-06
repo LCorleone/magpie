@@ -123,7 +123,10 @@ func parseTextCalls(s string, names map[string]bool) (calls []writtenCall, rest 
 				s = t
 				continue
 			}
-			c, n, good := hermesCall(s[h+len("<tool_call>"):], names)
+			c, n, good := paramCall(s[h+len("<tool_call>"):], names)
+			if !good {
+				c, n, good = hermesCall(s[h+len("<tool_call>"):], names)
+			}
 			if !good && !strings.HasPrefix(strings.TrimLeft(s[h+len("<tool_call>"):], " \t\r\n"), "{") {
 				// GLM's own: the name, then its arguments in pairs (#906)
 				c, n, good = glmCall(s[h+len("<tool_call>"):], names)
@@ -158,7 +161,7 @@ func parseTextCalls(s string, names map[string]bool) (calls []writtenCall, rest 
 // cutMark is the end of s that is a mark's beginning cut short (</ of
 // </tool_call>), "" when there's none; a lone < may be text.
 func cutMark(s string) string {
-	for _, m := range append([]string{"</tool_call>", "</｜DSML｜", "</|DSML|"}, textCallMarks...) {
+	for _, m := range append([]string{"</tool_call>", "</parameter>", "</｜DSML｜", "</|DSML|"}, textCallMarks...) {
 		for n := len(m) - 1; n >= 2; n-- {
 			if strings.HasSuffix(s, m[:n]) {
 				return m[:n]
@@ -207,6 +210,70 @@ func hermesCall(s string, names map[string]bool) (writtenCall, int, bool) {
 		n = len(s) - len(t) + len("</tool_call>")
 	}
 	return writtenCall{Name: v.Name, Args: args}, n, true
+}
+
+var (
+	paramHead = regexp.MustCompile(`^\s*\{\s*"name"\s*:\s*"([^"]+)"\s*\}?\s*>?`)
+	paramOpen = regexp.MustCompile(`^\s*<parameter(?:\s+name\s*=\s*"([^"]+)"|=([^\s>]+))\s*>`)
+)
+
+// paramCall reads a call DeepSeek wrote half as Hermes' block and half as
+// its own template (#917, Moody-Sin: DeepSeek through a group, in Pi): the
+// name as JSON, closed with } or > or not at all, then each argument as
+// <parameter name="k">v</parameter> (or Qwen's <parameter=k>), the closes
+// often missing, as DeepSeek's are tokens of its own the API drops. A
+// value runs to its close, the next parameter, </tool_call> or the end;
+// one that is JSON is taken as it, else it is the text it says. It says
+// how much of s it took.
+func paramCall(s string, names map[string]bool) (writtenCall, int, bool) {
+	m := paramHead.FindStringSubmatchIndex(s)
+	if m == nil || !names[s[m[2]:m[3]]] {
+		return writtenCall{}, 0, false
+	}
+	name, n := s[m[2]:m[3]], m[1]
+	args := map[string]any{}
+	for {
+		p := paramOpen.FindStringSubmatchIndex(s[n:])
+		if p == nil {
+			break
+		}
+		var key string
+		if p[2] >= 0 {
+			key = s[n+p[2] : n+p[3]]
+		} else {
+			key = s[n+p[4] : n+p[5]]
+		}
+		n += p[1]
+		end, next := len(s), len(s)
+		for _, stop := range []string{"</parameter>", "<parameter", "</tool_call>", "<tool_call>"} {
+			if i := strings.Index(s[n:], stop); i >= 0 && n+i < end {
+				end, next = n+i, n+i
+				if stop == "</parameter>" {
+					next += len(stop)
+				}
+			}
+		}
+		val := strings.Trim(s[n:end], "\r\n")
+		val = strings.TrimSuffix(val, cutMark(val))
+		var v any
+		if json.Unmarshal([]byte(strings.TrimSpace(val)), &v) == nil {
+			args[key] = v
+		} else {
+			args[key] = val
+		}
+		n = next
+	}
+	if len(args) == 0 {
+		return writtenCall{}, 0, false
+	}
+	if t := strings.TrimLeft(s[n:], " \t\r\n"); strings.HasPrefix(t, "</tool_call>") {
+		n = len(s) - len(t) + len("</tool_call>")
+	}
+	b, err := json.Marshal(args)
+	if err != nil {
+		return writtenCall{}, 0, false
+	}
+	return writtenCall{Name: name, Args: b}, n, true
 }
 
 var (

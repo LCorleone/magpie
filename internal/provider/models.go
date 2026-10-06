@@ -917,6 +917,8 @@ func EffectivePriceIn(s settings.Settings, providerID, model string) (catalog.Pr
 	for _, key := range [...]string{id + "/" + model, id + "/*", AnyPriceKey(model)} {
 		if m, ok := s.ModelPrices[key]; ok {
 			if pr, bad := m.Price(); bad == "" {
+				// a Claude model's 1-hour cache write left out: 2× input
+				catalog.OneHourFor(model, &pr)
 				return pr, true
 			}
 		}

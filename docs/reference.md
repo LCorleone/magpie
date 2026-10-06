@@ -90,10 +90,11 @@ line; agents connected to magpie lose it when it quits.
 | Cursor CLI   | `~/.cursor/cli-config.json`       | model           |
 | Zed          | `~/.config/zed/settings.json` (`$XDG_CONFIG_HOME` on Linux, `%APPDATA%\Zed` on Windows) | model (a `magpie` OpenAI-compatible provider; its catalog in Zed's picker) |
 | VS Code (Chat) | `~/Library/Application Support/Code/User/settings.json` + `chatLanguageModels.json` (`~/.config/Code/User` on Linux, `%APPDATA%\Code\User` on Windows) | model (`chat.defaultModel`; a `magpie` Custom Endpoint group, its catalog in Chat's model picker; VS Code 1.122+, no Copilot sign-in or key needed). Each profile's own pair under `User/profiles/<id>/` (listed in `globalStorage/storage.json`) gets the same, unless the profile uses the default's |
+| VS Code Insiders (Chat) | the same files under `Code - Insiders/User` in place of `Code/User` | as VS Code, a row of its own; its models send the token `magpie-vscode-insiders`, since its chat's User-Agent is VS Code's |
 | JetBrains Air | `acp.json` in `~/Library/Application Support/JetBrains/Air` (`~/.config/JetBrains/Air` on Linux, `%APPDATA%\JetBrains\Air` on Windows) + `magpie-opencode.json` beside it | model (a `Magpie` ACP agent: OpenCode's `opencode acp` on magpie's provider alone, its models and routing groups in Air's model menu; needs OpenCode installed) |
 | Copilot CLI  | `~/.copilot/settings.json`        | model           |
 | Crush        | `~/.config/crush/crush.json`      | large, small    |
-| DeepSeek Harness (dsh) | `~/.dsh/profiles/*/cordis.patch.yml` (`$DSH_HOME`; a custom provider, Magpie), or `~/.dsh/config.yaml` before dsh 0.1.5 | model, effort |
+| DeepSeek Harness (dsh) | `~/.dsh/profiles/*/cordis.patch.yml` (`$DSH_HOME`; a custom provider, Magpie, its key `MAGPIE_GATEWAY_KEY` in `~/.dsh/.env`; on one of magpie's models its `web-search-deepseek` row also goes to the gateway, which searches with the model or Settings › Web search, unless dsh has a `DEEPSEEK_API_KEY` or a row of your own), or `~/.dsh/config.yaml` before dsh 0.1.5 | model, effort |
 | Command Code | `~/.commandcode/settings.json` (+ `providers.json`) | model |
 | fx           | `~/.fx/settings.json`             | model (a keyless `magpie` provider) |
 | omp (oh-my-pi) | `~/.omp/agent/config.yml` (+ `models.yml`) | model |
@@ -237,6 +238,8 @@ magpie gateway-key limit <id>          # limit, used, left and reset
 magpie gateway-key limit <id> off      # no limit
 magpie gateway-key models <id> openai/gpt-5 anthropic/*   # only these models
 magpie gateway-key models <id> all     # every model
+magpie gateway-key accounts <id> codex/me@example.com   # only these accounts
+magpie gateway-key accounts <id> all    # every account
 ```
 
 Each gateway key can have its own **limit**: a token total, an estimated
@@ -270,6 +273,29 @@ Gemini lists, a routing group it doesn't name only when it may use every
 member, and is refused any other model with a 403 in the API's error shape
 before a provider is asked; a fallback it may not use is skipped. A key with
 no models listed may use every model.
+
+A gateway key can also be held to some **accounts** (#905): the accounts
+and keys its requests may use, picked in the same menu after the models —
+an account by who is signed in, a key by its fingerprint — or with
+`magpie gateway-key accounts <id> codex/me@example.com openai/<key id>`
+(`all` takes the restriction off). The list holds a key to some accounts
+**of the providers it names**: a provider it names no account of, the key
+uses as it always did. The list keeps an account by its stable id, kept
+through renames, shown by who is signed in; one gone later — a key
+rotated, an account signed out, an account of an agent that keeps no
+logins renamed — is kept as it is, matching nothing, so the key is held
+closer, never wider. A routing group the key names is its members'
+through the accounts it may use only: naming a group is not naming its
+accounts, and magpie's own calls for the key — a web search, a picture
+described, a Codex title — are of the models the user picked, but their
+spend lands on an account, so the accounts hold them too. When every
+account or key behind a model is one the key may not use, the request is
+refused with a 403 in the API's own error shape naming the model and the
+accounts it may use, before a provider is asked — after a usage cap's 429
+and before an account barred for the model's — and `/v1/models` lists the
+key only the models an account or key it may use serves, the Routing
+view's left-out list marking what the key held out. A key with no
+accounts listed may use every account, as keys always did.
 
 While LAN sharing is enabled, remote requests require an enabled gateway key
 sent as Bearer, `x-api-key`, `x-goog-api-key` or `?key=`. Loopback remains
@@ -456,8 +482,10 @@ write kept for 5 minutes at 1.25× input and one kept for an hour at 2× input,
 and its usage says which were which (`cache_creation.ephemeral_5m_input_tokens`
 / `ephemeral_1h_input_tokens`, from the API and from Claude Code's
 transcripts). The fourth number is the 5-minute price; the fifth, when not
-given, is 2× input — Anthropic's rule, and only Anthropic reports 1-hour
-writes, so for any other model it never comes into play. A call recorded
+given, is 2× input for a Claude model — Anthropic's rule. Any other model has
+no 1-hour price unless you give one: a 1-hour write it reports is counted at
+the 5-minute price, and neither `magpie model price` nor the app's boxes show
+a 1-hour price for it. A call recorded
 before magpie kept the split counts all its writes at the 5-minute price, as
 it did.
 

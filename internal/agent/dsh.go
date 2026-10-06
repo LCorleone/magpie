@@ -106,6 +106,9 @@ func dshAt(at place) *Agent {
 					notes = append(notes, "dsh reads its config at start-up — restart open dsh sessions to use this.")
 				}
 			}
+			if dshSearchesHere(dir) && !gateway.CanSearch() {
+				notes = append(notes, "dsh's web search goes through magpie, which has nothing to search with yet: set up a provider that searches by itself (DeepSeek, Claude, Codex, …) or a search API under Settings › Web search.")
+			}
 			// only before 0.1.5 does magpie go through llm-deepseek
 			if len(dshProfiles(dir)) == 0 && dshSettingsEndpoint(filepath.Join(dir, "settings.yaml")) {
 				notes = append(notes, "~/.dsh/settings.yaml sets its own DeepSeek endpoint or key, which dsh puts over magpie's; clear it in dsh's Models page to go through magpie.")
@@ -840,6 +843,9 @@ func dshSetFile(path, v string, modern bool, models []catalog.Model, gw string) 
 		if items, err = dshPutRoute(items, false, nil, gw); err != nil {
 			return err
 		}
+		if modern {
+			items = dshPutSearch(items, dshProfileHome(path), "", gw)
+		}
 	case modern && viaGateway:
 		drop("llm-deepseek") // magpie's before it was a provider of its own
 		if items, err = dshPutRoute(items, true, models, gw); err != nil {
@@ -849,11 +855,13 @@ func dshSetFile(path, v string, modern bool, models []catalog.Model, gw string) 
 			effort = ""
 		}
 		put("agent-default-model", dshDefaultLines(dshRoute, ref, effort))
+		items = dshPutSearch(items, dshProfileHome(path), ref, gw)
 	case modern:
 		drop("llm-deepseek")
 		if items, err = dshPutRoute(items, false, nil, gw); err != nil {
 			return err
 		}
+		items = dshPutSearch(items, dshProfileHome(path), "", gw)
 		if !contains(dshEfforts, effort) {
 			effort = ""
 		}
@@ -1218,7 +1226,8 @@ func dshSync(dir, gw string) error {
 }
 
 // dshRouteAgain writes magpie's route again in one patch list where it is no
-// longer what magpie would write, and says whether it wrote. It is the one
+// longer what magpie would write, and says whether it wrote; magpie's web
+// search entry in a profile goes to the gateway's address with it. It is the one
 // thing that may be done again at any time: the route is magpie's list of
 // its own models, while the model a session starts on is the user's pick
 // (see dshCheck). A patch list without magpie's route is left as it is —
@@ -1238,12 +1247,14 @@ func dshRouteAgain(f string, models []catalog.Model, gw string) (bool, error) {
 	if err != nil || !dshWired(items) {
 		return false, nil
 	}
-	i := dshConfigIndex(items, dshPiRow)
-	before := strings.Join(items[i].lines, "\n")
+	before := dshJoin(items)
 	if items, err = dshPutRoute(items, true, models, gw); err != nil {
 		return false, nil
 	}
-	if strings.Join(items[i].lines, "\n") == before {
+	if filepath.Base(filepath.Dir(filepath.Dir(f))) == "profiles" {
+		items = dshSearchAgain(items, dshProfileHome(f), gw)
+	}
+	if dshJoin(items) == before {
 		return false, nil
 	}
 	if now, err := edit.Read(f); err != nil || !bytes.Equal(now, raw) {

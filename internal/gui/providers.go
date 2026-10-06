@@ -219,6 +219,9 @@ func accountLabel(p provider.Provider) (name, icon string) {
 	} else if a.Agent == provider.MiMoID {
 		// a Xiaomi MiMo account, not MiMo Code (the agent "mimo" also names)
 		name, icon = "Xiaomi MiMo", "mimocode"
+	} else if a.Agent == provider.ChatGPTAPIID {
+		// a ChatGPT plan through OpenAI's API, not Codex's backend
+		name, icon = "ChatGPT API", "openai"
 	} else if ag, err := agent.Find(a.Agent); err == nil {
 		name, icon = ag.Name, ag.Icon
 	} else if a.Agent == "cursor" {

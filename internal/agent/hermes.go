@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/yetone/magpie/internal/edit"
-	"github.com/yetone/magpie/internal/gateway"
 )
 
 func hermes(home string) *Agent { return hermesIn(here(home)) }
@@ -140,12 +139,9 @@ type hermesProviderEntry struct {
 	Models  []string          `yaml:"models"`
 }
 
-// hermesProvider is magpie's entry under providers. Hermes sends its own
-// User-Agent only from a recent release on, so the header names it for the
-// gateway's usage view.
-func hermesProvider() hermesProviderEntry { return hermesProviderAt(gateway.URL()) }
-
-// hermesProviderAt is hermesProvider for a Hermes reaching the gateway at gw.
+// hermesProviderAt is magpie's entry under providers, for a Hermes reaching
+// the gateway at gw. Hermes sends its own User-Agent only from a recent
+// release on, so the header names it for the gateway's usage view.
 func hermesProviderAt(gw string) hermesProviderEntry {
 	ms := []string{}
 	for _, m := range magpieModels("hermes") {

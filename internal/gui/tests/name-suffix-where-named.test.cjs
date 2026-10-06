@@ -79,6 +79,12 @@ async function launch(t, engine, lang, posts) {
   return { page, errors };
 }
 
+// a pick shows as picked at once, and the line under it follows when the
+// setting is saved: wait for that, then say what it is
+async function says(loc, want) {
+  for (let i = 0; i < 100 && (await loc.textContent()) !== want; i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(await loc.textContent(), want);
+}
 const scrolls = (page) => page.evaluate(() => [scrollY, ...[...document.querySelectorAll(".view")].map((v) => v.scrollTop)]);
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -98,8 +104,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const before = await scrolls(page);
       await sfx.locator(".opt", { hasText: w.own }).click();
       await page.locator(".mnames:not([hidden]) .msuffix .opt.on", { hasText: w.own }).waitFor();
+      await says(sfx.locator(".hint"), w.shows("My Sol"));
       assert.deepEqual(posts, [{ mode: "own" }]);
-      assert.equal(await sfx.locator(".hint").textContent(), w.shows("My Sol"));
       assert.deepEqual(await scrolls(page), before, "the click scrolled the page");
       assert.deepEqual(errors, []);
     });
@@ -130,10 +136,10 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const before = await scrolls(page);
       await set.locator(".opt", { hasText: w.own }).click();
       await page.locator(".rt-gnames .opt.on", { hasText: w.own }).waitFor();
-      assert.deepEqual(posts, [{ mode: "own" }]);
       // the open editor follows it, its unsaved name kept
       const row2 = page.locator(".rt-gedit label", { hasText: new RegExp(`^${w.label}$`) }).locator("xpath=following-sibling::div[1]");
-      assert.equal(await row2.locator(".hint").textContent(), w.shows("Fast lane") + w.above);
+      await says(row2.locator(".hint"), w.shows("Fast lane") + w.above);
+      assert.deepEqual(posts, [{ mode: "own" }]);
       assert.deepEqual(await scrolls(page), before, "the click scrolled the page");
       // nothing native, no stripe down the side
       assert.equal(await page.locator("#view-routing select").count(), 0);

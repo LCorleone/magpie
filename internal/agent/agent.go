@@ -121,6 +121,17 @@ type Agent struct {
 	// Joined reports an agent Join connected: magpie is in its config
 	// though no field is on one of magpie's models.
 	Joined func() bool
+	// Beside reports an agent set on one of magpie's models beside its own
+	// (Codex by the base URL beside its ChatGPT sign-in), now on one of its
+	// own written in by the agent: still connected, as joined, though the
+	// change is told as drift (#940).
+	Beside func() bool
+	// OwnVia is the catalog id magpie serves one of the agent's own models
+	// by on a sign-in of the user's, which its model field lists as its
+	// own rather than as magpie's ("codex/gpt-5.5" for Codex's gpt-5.5),
+	// "" for none: Connect keeps the agent on that model through magpie
+	// where it can't Join (#940: Codex went to an unrelated model).
+	OwnVia func(model string) string
 	// Routed reports that the agent's config sends whatever model it
 	// names to magpie's gateway (Codex's openai_base_url or magpie as its
 	// provider), so a model's name the gateway takes as a routing group

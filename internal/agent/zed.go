@@ -3,7 +3,9 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -19,6 +21,14 @@ var zedCredential = saveZedCredential
 
 // Zed uses ~/.config on macOS, XDG on Linux and Roaming AppData on Windows.
 func zed(home, cfg string) *Agent {
+	bin := os.Getenv("MAGPIE_ZED_BIN")
+	if bin == "" {
+		bin = "zed"
+	}
+	processes := zedProcessNames()
+	if custom := appdir.Getenv("MAGPIE_ZED_CONFIG_DIR"); custom != "" {
+		return zedAtWith(custom, bin, processes)
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		cfg = filepath.Join(home, ".config")
@@ -27,21 +37,25 @@ func zed(home, cfg string) *Agent {
 		if cfg == "" {
 			cfg = filepath.Join(home, "AppData", "Roaming")
 		}
-		return zedAt(filepath.Join(cfg, "Zed"))
+		return zedAtWith(filepath.Join(cfg, "Zed"), bin, processes)
 	}
-	return zedAt(filepath.Join(cfg, "zed"))
+	return zedAtWith(filepath.Join(cfg, "zed"), bin, processes)
 }
 
 func zedAt(dir string) *Agent {
+	return zedAtWith(dir, "zed", zedProcessNames())
+}
+
+func zedAtWith(dir, bin string, processes []string) *Agent {
 	path := filepath.Join(dir, "settings.json")
 	get := func(k string) string { v, _ := edit.GetJSON(path, k); return v }
 	model := pairGet(func(k string) (string, bool) { return edit.GetJSON(path, k) }, zedModel+".provider", zedModel+".model")
 	key := "zed:" + path + ":"
 	return atomic(&Agent{
-		ID: "zed", Name: "Zed", Icon: "zed", Bin: "zed", Dir: dir, Path: path, Spelled: prefixed,
+		ID: "zed", Name: "Zed", Icon: "zed", Bin: bin, Dir: dir, Path: path, Spelled: prefixed,
 		UA: []string{"zed"},
 		Notice: func() string {
-			if usesMagpie(model()) && Running(`(^|/)(zed|zeditor|zed-editor)( |$)`) {
+			if usesMagpie(model()) && Running(processes...) {
 				return "Restart Zed if it still asks for an API key: magpie has configured its gateway credential in the system credential store."
 			}
 			return ""
@@ -116,6 +130,24 @@ func zedAt(dir string) *Agent {
 			},
 		}},
 	}, path, stashPath())
+}
+
+func zedProcessNames() []string {
+	value := os.Getenv("MAGPIE_ZED_PROCESS_NAMES")
+	if value == "" {
+		return []string{`(^|/)(zed|zeditor|zed-editor)( |$)`}
+	}
+	var out []string
+	for _, name := range strings.Split(value, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			out = append(out, `(^|/)`+regexp.QuoteMeta(name)+`( |$)`)
+		}
+	}
+	if len(out) == 0 {
+		return []string{`(^|/)(zed|zeditor|zed-editor)( |$)`}
+	}
+	return out
 }
 
 func zedProviderJSON() map[string]any {

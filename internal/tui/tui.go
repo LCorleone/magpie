@@ -175,6 +175,9 @@ func newModel() model {
 	}
 	shown, hidden := settings.Arrange(settings.Load(), set, func(a *agent.Agent) string { return a.ID })
 	m := model{agents: append(shown, hidden...), hidden: len(shown), period: usage.Week, srange: 1}
+	// no model catalog yet: Init syncs it. Set here, as Init's receiver is
+	// a copy the program never sees.
+	m.syncing = catalog.Source() == ""
 	m.reload()
 	return m
 }
@@ -220,8 +223,7 @@ func (m *model) goTo(p page) tea.Cmd {
 }
 
 func (m model) Init() tea.Cmd {
-	if catalog.Source() == "" {
-		m.syncing = true
+	if m.syncing {
 		return syncCmd
 	}
 	return nil

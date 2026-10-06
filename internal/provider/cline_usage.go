@@ -126,7 +126,9 @@ func clineUSD(n float64) string {
 // clineStatus is an HTTP status the Cline API answered with.
 type clineStatus int
 
-func (s clineStatus) Error() string { return fmt.Sprintf("Cline answered %d %s", int(s), http.StatusText(int(s))) }
+func (s clineStatus) Error() string {
+	return fmt.Sprintf("Cline answered %d %s", int(s), http.StatusText(int(s)))
+}
 
 // clineGet asks the Cline API at path with the key and reads its
 // {success, data} reply's data into out.

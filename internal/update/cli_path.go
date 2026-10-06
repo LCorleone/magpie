@@ -50,6 +50,7 @@ type CLI struct {
 	Stuck   string     `json:"stuck,omitempty"`   // translocated, read-only: why it can't be linked from where it is
 	Shells  []CLIShell `json:"shells"`
 	Windows bool       `json:"windows,omitempty"`
+	Shim    string     `json:"shim,omitempty"` // Windows: the magpie.cmd Add writes beside an app not named magpie.exe, which runs it
 }
 
 // cliShell is a shell installed here.
@@ -76,6 +77,9 @@ func ReadCLI() *CLI {
 		return v
 	}
 	v.Exe, v.Stuck = exe, cliStuck()
+	if v.Windows && needsShim(exe) {
+		v.Shim = filepath.Join(filepath.Dir(exe), shimName)
+	}
 	shells := cliShells()
 	paths := make([][]string, len(shells))
 	var wg sync.WaitGroup
@@ -90,7 +94,7 @@ func ReadCLI() *CLI {
 	var def []string
 	for i, sh := range shells {
 		s := CLIShell{Name: sh.Name, Default: sh.Default, Known: paths[i] != nil, Command: findCLI(paths[i])}
-		s.Ours = s.Command != "" && sameFile(s.Command, exe)
+		s.Ours = s.Command != "" && (sameFile(s.Command, exe) || shimRuns(s.Command, exe))
 		if p := cliProfile(sh.Name); p != "" {
 			s.Profile = tildeHome(p)
 		}
@@ -333,6 +337,52 @@ func tildeHome(p string) string {
 		return "~" + p[len(h):]
 	}
 	return p
+}
+
+// A Windows app not named magpie.exe — the site's download is
+// magpie-windows-amd64.exe (#942) — is given a magpie.cmd beside it that
+// runs it, since a terminal looks for `magpie` by that name only. It names
+// the program by its folder (%~dp0) and file name, which an update keeps:
+// it replaces the program where it is, under its name.
+
+// shimName is the file a shim is written to.
+const shimName = "magpie.cmd"
+
+// shimText is the magpie.cmd that runs the program exe in its folder.
+func shimText(exe string) string {
+	name := filepath.Base(strings.ReplaceAll(exe, `\`, "/"))
+	return "@echo off\r\nrem added by magpie (Settings > Command line): the magpie command runs " + name + " in this folder\r\n\"%~dp0" + name + "\" %*\r\n"
+}
+
+// needsShim says whether the program exe can't be run as `magpie` by its
+// own name.
+func needsShim(exe string) bool {
+	return !strings.EqualFold(filepath.Base(strings.ReplaceAll(exe, `\`, "/")), "magpie.exe")
+}
+
+// writeShim writes the magpie.cmd for exe beside it, when its name needs
+// one; it is the file's path, "" when none was needed.
+func writeShim(exe string) (string, error) {
+	if !needsShim(exe) {
+		return "", nil
+	}
+	p := filepath.Join(filepath.Dir(exe), shimName)
+	if b, err := os.ReadFile(p); err == nil && string(b) == shimText(exe) {
+		return p, nil
+	}
+	if err := os.WriteFile(p, []byte(shimText(exe)), 0o755); err != nil {
+		return "", fmt.Errorf("writing %s, which runs %s as magpie: %w", p, filepath.Base(exe), err)
+	}
+	return p, nil
+}
+
+// shimRuns says whether cmd is the magpie.cmd magpie wrote for exe.
+func shimRuns(cmd, exe string) bool {
+	if !strings.EqualFold(filepath.Base(cmd), shimName) || !strings.EqualFold(filepath.Dir(cmd), filepath.Dir(exe)) {
+		return false
+	}
+	b, err := os.ReadFile(cmd)
+	return err == nil && string(b) == shimText(exe)
 }
 
 // pathFirst is the PATH value v (Windows', ;-separated) with dir first and

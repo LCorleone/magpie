@@ -105,8 +105,8 @@ type Price struct {
 	// CacheWrite1h is what a cache write kept for an hour costs, Anthropic's
 	// 1-hour TTL, which it bills at 2× input where a 5-minute write (the
 	// CacheWrite above) is 1.25×. 0 is not given: such a write is then
-	// counted at 2× input, Anthropic's rule for every model, as only
-	// Anthropic's usage says which writes were for an hour.
+	// counted at the 5-minute price, as no other vendor has an hour's
+	// writes to bill apart; a Claude model's is 2× input (OneHourFor).
 	CacheWrite1h float64 `json:"cache_write_1h,omitempty"`
 	// Tiers are the prices a request is billed at, whole, once its input
 	// goes over a size (OpenAI's gpt-6-astra: 2× input and cache, 1.5×
@@ -177,10 +177,13 @@ func (p *Price) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// claudeOneHour gives a Claude model's list price its 1-hour cache write,
-// which models.dev doesn't list: 2× input, as Anthropic bills it for every
-// model, wherever the model has a (5-minute) cache write price at all.
-func claudeOneHour(id string, p *Price) {
+// OneHourFor gives a Claude model's price its 1-hour cache write where none
+// is given — models.dev lists none, and a price the user gives may leave it
+// out: 2× input, as Anthropic bills it for every model, wherever the model
+// has a (5-minute) cache write price at all. Any other model's stays
+// unset, its writes all at the 5-minute price: only Anthropic has a 1-hour
+// one (PAMI on Discord: gpt-6-astra was shown a $20 one that isn't).
+func OneHourFor(id string, p *Price) {
 	if p == nil || p.CacheWrite <= 0 || p.CacheWrite1h > 0 || !strings.Contains(strings.ToLower(id), "claude") {
 		return
 	}
@@ -222,12 +225,12 @@ func (p Price) At(prompt int) Price {
 }
 
 // OneHour is what a 1-hour cache write costs at this flat price: the price
-// given, else 2× input, Anthropic's rule.
+// given, else the 5-minute one (a Claude model's is given, OneHourFor).
 func (p Price) OneHour() float64 {
 	if p.CacheWrite1h > 0 {
 		return p.CacheWrite1h
 	}
-	return 2 * p.Input
+	return p.CacheWrite
 }
 
 // Cost of a call at this price, every cache write a 5-minute one.
@@ -370,7 +373,7 @@ func load() map[string]mdProvider {
 					voted := map[string]bool{}
 					for pid, p := range m {
 						for id, x := range p.Models {
-							claudeOneHour(id, x.Cost)
+							OneHourFor(id, x.Cost)
 							if e := x.efforts(); len(e) > 0 {
 								l := strings.Join(e, ",")
 								if levels[bareID(id)] == nil {
@@ -492,24 +495,6 @@ func Stale() bool {
 	}
 	st, err := os.Stat(src)
 	return err != nil || time.Since(st.ModTime()) > staleAfter
-}
-
-// ProviderEnv lists the env vars that unlock a models.dev provider.
-func ProviderEnv(provider string) []string {
-	if p, ok := load()[provider]; ok {
-		return p.Env
-	}
-	return nil
-}
-
-// ProviderAvailable is true when any of the provider's API-key env vars is set.
-func ProviderAvailable(provider string) bool {
-	for _, e := range ProviderEnv(provider) {
-		if os.Getenv(e) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // PriceOf is the list price of a models.dev provider's model, if known.

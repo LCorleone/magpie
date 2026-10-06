@@ -75,6 +75,16 @@ const words = {
   },
 };
 
+// a right-click on a chip out of sight: Playwright scrolls it in first, and
+// Chromium sends that scroll's event a frame later, which closes the menu
+// the click opened (a menu closes on a scroll). Scroll it in, let the
+// frame pass, then click.
+async function rclick(loc) {
+  await loc.click({ button: "right", trial: true }); // scrolls it in, clicks nothing
+  await loc.page().evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await loc.click({ button: "right" });
+}
+
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of ["en", "zh"]) {
     const w = words[lang];
@@ -107,7 +117,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const c = chip(page, "gpt-6-mini");
       await c.scrollIntoViewIfNeeded();
       const before = await c.evaluate((e) => e.getBoundingClientRect().top), sc = await scrolled(page);
-      await c.click({ button: "right" });
+      await rclick(c);
       const menu = page.locator(".pop.row-menu");
       await menu.waitFor();
       const item = menu.getByRole("menuitem", { name: w.item });
@@ -130,7 +140,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const c = chip(page, "claude-haiku-5");
       await c.scrollIntoViewIfNeeded();
       const before = await c.evaluate((e) => e.getBoundingClientRect().top), sc = await scrolled(page);
-      await c.click({ button: "right" });
+      await rclick(c);
       const menu = page.locator(".pop.row-menu");
       await menu.waitFor();
       // Test this model, off, and Copy model ID, which is on
@@ -169,7 +179,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const tests = [];
       const { page, errors } = await open(t, "Deciders", tests);
       const c = chip(page, "respan/span-01");
-      await c.click({ button: "right" });
+      await rclick(c);
       const menu = page.locator(".pop.row-menu");
       await menu.waitFor();
       const item = menu.getByRole("menuitem", { name: w.item });
@@ -189,7 +199,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
     test(`${engine} ${lang}: a Workers AI classifier's model still says why it can't be tested`, async (t) => {
       const tests = [];
       const { page, errors } = await open(t, "Workers", tests);
-      await chip(page, "typesafe/jev").click({ button: "right" });
+      await rclick(chip(page, "typesafe/jev"));
       const menu = page.locator(".pop.row-menu");
       await menu.waitFor();
       assert(await menu.locator(".rm-item").first().isDisabled(), "Test this model is off");

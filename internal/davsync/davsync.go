@@ -325,11 +325,22 @@ func (c Config) sameAccount(o Config) bool {
 		strings.TrimSpace(c.User) == strings.TrimSpace(o.User)
 }
 
-// Off turns sync off. The file on the server stays.
+// Off turns sync off. The file on the server stays, and so does what this
+// computer last synced with it: turned on again to the same server, it is
+// not a new computer, so what was changed here while it was off goes up
+// rather than the server's older setup coming down over it (#939: every
+// agent back to how it was when sync was turned off). How the last sync
+// went, its notice and a restore's undo go.
 func Off() error {
 	return locked(func() error {
-		os.Remove(path("sync-state.json"))
-		os.Remove(path(cacheName))
+		st := loadState()
+		if st.Local == nil {
+			os.Remove(path("sync-state.json"))
+			os.Remove(path(cacheName))
+		} else {
+			st.Error, st.Notice, st.Undo, st.Usage = "", nil, "", nil
+			saveState(st)
+		}
 		usage.DropAllShared() // the others' usage came by sync: it goes with it (#542)
 		if err := os.Remove(path("sync.json")); err != nil && !os.IsNotExist(err) {
 			return err

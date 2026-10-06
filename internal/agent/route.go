@@ -105,6 +105,10 @@ func magpieModels(agent string) []catalog.Model {
 	st, find := settings.Load(), provider.GroupFinder()
 	for i, e := range shown {
 		m := catalog.Model{ID: e.ID, Name: labels[i], Provider: firstOf(e.Provider.Catalogs()), Efforts: e.Efforts, Images: e.Images || seen, ImageInput: e.ImageInput, Context: e.Context, Output: e.Output, AgentsV2: e.AgentsV2, Reasoning: e.Reasoning}
+		// where Codex and Claude Code compact it (#876): a threshold the
+		// user set on the model or on its provider, else the one for every
+		// model, which codexcat answers from the settings it is given
+		m.Compact = provider.CompactSetIn(st, e.ID, find)
 		// what a call costs the user (Pi's cost, #781)
 		if pr, ok := entryPrice(st, find, e); ok {
 			m.Price = &pr

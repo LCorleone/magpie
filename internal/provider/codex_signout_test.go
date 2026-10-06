@@ -10,34 +10,37 @@ import (
 )
 
 // Codex's only account is signed out when it is removed, as codex logout
-// does (mamba on Discord); one with another saved is still refused, with a
-// SignedInError the GUI says in the reader's language; and ForgetAccount,
-// which takes the one in use last, signs Codex out too.
+// does (mamba on Discord); one with another saved signs Codex in to that
+// one first (vincentzhang1_55530 on Discord: a Team account removed beside
+// a Plus one left Codex at its sign-in screen); and ForgetAccount, which
+// takes the one in use last, signs Codex out too.
 func TestCodexSignOutLastAccount(t *testing.T) {
 	home := signIn(t)
 	auth := filepath.Join(home, ".codex", "auth.json")
 	rememberLogins(true)
+	var signedIn *SignedInError
 
-	// another saved: the one signed in to is refused, as before
+	// another saved: the one signed in to goes, and Codex is signed in to
+	// the other, its own sign-in back in auth.json
 	codexSignIn(t, home, "work@example.com", "r-work")
 	rememberLogins(true)
-	err := ForgetLogin("codex", "work@example.com")
-	var signedIn *SignedInError
-	if !errors.As(err, &signedIn) || signedIn.Agent != "codex" || signedIn.User != "work@example.com" {
+	if err := ForgetLogin("codex", "work@example.com"); err != nil {
 		t.Fatalf("the one in use with another saved: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Codex is signed in to work@example.com now") {
-		t.Fatalf("message: %v", err)
+	live, ok := liveLogin("codex")
+	if !ok || live.User != "me@example.com" {
+		t.Fatalf("Codex signed in to %q (%v), want me@example.com", live.User, ok)
 	}
-	if _, err := os.Stat(auth); err != nil {
-		t.Fatalf("auth.json went on a refusal: %v", err)
+	if b, _ := os.ReadFile(auth); strings.Contains(string(b), "r-work") {
+		t.Fatalf("auth.json still the removed one's: %s", b)
+	}
+	rememberLogins(true)
+	if ls := Logins("codex"); len(ls) != 1 || ls[0].User != "me@example.com" || !ls[0].Active {
+		t.Fatalf("listed: %+v", ls)
 	}
 
-	// the other forgotten, the one left is signed out
+	// the one left is signed out
 	if err := ForgetLogin("codex", "me@example.com"); err != nil {
-		t.Fatal(err)
-	}
-	if err := ForgetLogin("codex", "work@example.com"); err != nil {
 		t.Fatalf("the only account: %v", err)
 	}
 	if _, err := os.Stat(auth); !os.IsNotExist(err) {

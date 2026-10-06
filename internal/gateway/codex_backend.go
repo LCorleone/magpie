@@ -793,6 +793,12 @@ func (s *Server) codexModels(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// and the auto-review model the user picked (#938)
+	for _, m := range own {
+		if o, ok := m.(map[string]any); ok {
+			codexcat.AutoReview(o)
+		}
+	}
 	ms := provider.CodexListed()
 	// the list is the backend's and magpie's, and so is its ETag
 	w.Header().Set("ETag", codexcat.WithTag(etag, provider.CodexListTag()))

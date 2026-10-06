@@ -53,6 +53,9 @@
   /* the cost stays; the title keeps the room the tokens took (#752) */
   .row.sm-sess .num { display: none; }
   .row.sm-sess .cost { min-width: 0; }
+  /* five gaps of 12px left a 420px window's title 90px once the list
+     scrolled and its scrollbar took 10px */
+  .row.sess.sm-sess { gap: 8px; }
 }
 @media (max-width: 420px) {
   .sm-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }

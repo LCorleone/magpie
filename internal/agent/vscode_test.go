@@ -233,3 +233,59 @@ func TestVSCodeUA(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+// VS Code Insiders is its own row (wani on Discord): its User folder is
+// "Code - Insiders" beside VS Code's "Code", connected it writes only there,
+// and its models send a token of its own, since its chat's User-Agent is
+// Stable's; VS Code's files are left alone
+func TestVSCodeInsiders(t *testing.T) {
+	home := syncHome(t)
+	ins, err := Find("vscode-insiders")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := Find("vscode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ins.Name != "VS Code Insiders" || ins.Bin != "code-insiders" || filepath.Base(filepath.Dir(ins.Dir)) != "Code - Insiders" || filepath.Base(ins.Dir) != "User" ||
+		filepath.Dir(filepath.Dir(ins.Dir)) != filepath.Dir(filepath.Dir(st.Dir)) || ins.UA != nil {
+		t.Fatalf("insiders: %+v\nstable dir %s", ins, st.Dir)
+	}
+	if !strings.HasPrefix(ins.Dir, home) {
+		t.Fatalf("insiders dir %s outside %s", ins.Dir, home)
+	}
+	for _, n := range []string{"code-insiders", "vs-code-insiders"} {
+		if a, err := Find(n); err != nil || a.ID != "vscode-insiders" {
+			t.Fatalf("Find(%q): %v %v", n, a, err)
+		}
+	}
+	writeFile(t, ins.Path, "{}\n")
+	writeFile(t, st.Path, `{"chat.defaultModel": "gpt-5"}`+"\n")
+	if !ins.Detected() {
+		t.Fatal("not detected")
+	}
+	if err := ins.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	g, ok := edit.GetJSONItem(filepath.Join(ins.Dir, "chatLanguageModels.json"), vscodeGroup)
+	if !ok || gjson.Get(g, "models.0.requestHeaders.Authorization").String() != "Bearer magpie-vscode-insiders" || !ins.Wired() || ins.Check() != "" {
+		t.Fatalf("connected: %s %v %q", g, ins.Wired(), ins.Check())
+	}
+	if readFile(st.Path) != `{"chat.defaultModel": "gpt-5"}`+"\n" || isFile(filepath.Join(st.Dir, "chatLanguageModels.json")) || st.Wired() {
+		t.Fatalf("VS Code touched:\n%s", readFile(st.Path))
+	}
+	// its requests are its own, Stable's still Stable's
+	if got := usage.AgentOf("vscode-insiders"); got != "vscode-insiders" {
+		t.Fatalf("token: %q", got)
+	}
+	if got := usage.AgentOf("GitHubCopilotChat/0.69.0"); got != "vscode" {
+		t.Fatalf("UA: %q", got)
+	}
+	if err := ins.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := edit.GetJSONItem(filepath.Join(ins.Dir, "chatLanguageModels.json"), vscodeGroup); ok || ins.Wired() {
+		t.Fatal("disconnected, magpie's group kept")
+	}
+}

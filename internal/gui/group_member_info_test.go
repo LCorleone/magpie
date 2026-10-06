@@ -3,6 +3,8 @@ package gui
 import (
 	"encoding/json"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/yetone/magpie/internal/catalog"
@@ -98,7 +100,114 @@ func TestGroupModelsCarryWhatTheyTake(t *testing.T) {
 	}
 }
 
-// The page reads a member's images off the wire: a model magpie has an answer
+// A member that is itself a routing group is in none of groups.models
+// (groupsState leaves groups out of that list), so the editor read nothing
+// for it and its row carried no chips at all. It now says what agents are
+// told of it — the window the largest of its models has, whether any of them
+// sees images, and the levels every one of them has — which is what
+// provider.groupEntries gives the group itself.
+func TestGroupMemberThatIsAGroupCarriesWhatAgentsSee(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	yes, no := true, false
+	if err := provider.Save(provider.Provider{ID: "p", Name: "P", Key: "k", Chat: "http://127.0.0.1:1/v1",
+		Models: []string{"a1", "a2", "b1", "b2", "plain"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.SaveLive("p", "http://127.0.0.1:1/v1", []catalog.Model{
+		// one sees, the other doesn't; both reason low/high/max
+		{ID: "a1", Images: true, ImageInput: &yes, Context: 1000000, Efforts: []string{"low", "high", "max"}},
+		{ID: "a2", ImageInput: &no, Context: 400000, Efforts: []string{"low", "high", "max"}},
+		// nothing in common between these two
+		{ID: "b1", ImageInput: &no, Context: 200000, Efforts: []string{"low"}},
+		{ID: "b2", ImageInput: &no, Context: 128000, Efforts: []string{"high"}},
+		{ID: "plain", ImageInput: &no, Context: 64000},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// inner1: a member sees images, so the group does; levels shared
+	if err := provider.SaveGroup(provider.Group{ID: "inner1", Name: "Same", Routing: provider.Ordered,
+		Members: []string{"p/a1", "p/a2"}}); err != nil {
+		t.Fatal(err)
+	}
+	// inner2: no member sees; no level in common
+	if err := provider.SaveGroup(provider.Group{ID: "inner2", Name: "Diff", Routing: provider.Ordered,
+		Members: []string{"p/b1", "p/b2"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.SaveGroup(provider.Group{ID: "outer", Name: "Outer", Routing: provider.Ordered,
+		Members: []string{"group/inner1", "group/inner2", "p/plain"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// a group is not among the models the page looks a member up in: this is
+	// the gap, and the memberInfo below is what makes up for it
+	for _, m := range groupsState().Models {
+		if strings.HasPrefix(m.ID, provider.GroupPrefix) {
+			t.Errorf("groups.models holds the group %s after all", m.ID)
+		}
+	}
+
+	var outer groupJSON
+	for _, x := range groupsState().Groups {
+		if x.ID == "outer" {
+			outer = x
+		}
+	}
+	if len(outer.Info) != 3 {
+		t.Fatalf("outer lists %d members", len(outer.Info))
+	}
+	byMember := map[string]memberJSON{}
+	for _, mi := range outer.Info {
+		byMember[mi.ID] = mi
+	}
+
+	inner := byMember["group/inner1"]
+	if !inner.Group {
+		t.Fatal("a group in a group is not marked as one")
+	}
+	if inner.Context != 1000000 {
+		t.Errorf("the group's window is %d, want the largest of its models' (1000000)", inner.Context)
+	}
+	if !inner.Images {
+		t.Error("the group is not said to take images, though a model in it sees")
+	}
+	if inner.ImagesUnknown {
+		t.Error("the group is called unknown, though its members were read")
+	}
+	if !slices.Equal(inner.Efforts, []string{"low", "high", "max"}) {
+		t.Errorf("the group offers %v, want the levels every model in it has", inner.Efforts)
+	}
+
+	// no level in common: the group offers none, and is not called unknown
+	diff := byMember["group/inner2"]
+	if diff.Images {
+		t.Error("a group none of whose models sees is said to take images")
+	}
+	if diff.ImagesUnknown {
+		t.Error("a group whose models were all read is called unknown")
+	}
+	if len(diff.Efforts) != 0 {
+		t.Errorf("a group whose models share no level offers %v", diff.Efforts)
+	}
+
+	// a plain member is unchanged by any of this
+	plain := byMember["p/plain"]
+	if plain.Group || len(plain.Efforts) != 0 || plain.Context != 64000 {
+		t.Errorf("the plain member is %+v", plain)
+	}
+
+	// and each member's row is readable: a member that carries any of these
+	// draws chips (routing.js reads memberInfo when the member is a group)
+	for _, mi := range outer.Info {
+		if !mi.Group && mi.Context == 0 {
+			t.Errorf("member %s carries nothing to read", mi.ID)
+		}
+	}
+}
+
 // for carries no imagesUnknown key at all (and `images` is omitempty, so a
 // model that takes none carries no images key either), while one nothing was
 // read of carries imagesUnknown: true. What the browser test's fixture writes

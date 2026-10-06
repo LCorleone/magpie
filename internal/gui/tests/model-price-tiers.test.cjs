@@ -66,12 +66,13 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const L = { names: zh ? "名称与推理档位" : "Names & levels", input: zh ? "输入" : "Input", output: zh ? "输出" : "Output", cacheRead: zh ? "缓存读取" : "Cache read",
         oneHour: zh ? "1 小时缓存写入" : "Cache write 1h", long: zh ? "长上下文价格" : "Long-context price", over: zh ? "超过的输入 token 数" : "Over input tokens",
         save: zh ? "保存" : "Save", badSize: zh ? "长上下文价格要写从多少输入 token 起算，比如 272K" : "A long-context price starts over a number of input tokens, like 272K" };
-      await page.locator(".row.provider").click();
+      await page.locator('.row.provider[data-id="relay"]').click();
       if (!(await page.locator(".mnames:not([hidden])").count())) await page.getByRole("button", { name: L.names, exact: true }).click();
       const row = (id) => page.locator(".mname", { has: page.locator("code", { hasText: id }) });
       const base = (id) => row(id).locator(".mprice > .mpart input");
       const tier = (id) => row(id).locator(".mtier input");
-      const typeIn = async (box, v) => { await box.fill(v); await box.press("Enter"); };
+      // Blurring the previous price normalizes its siblings before fill selects their text.
+      const typeIn = async (box, v) => { await box.focus(); await box.fill(v); await box.press("Enter"); };
       const y = await page.evaluate(() => scrollY);
 
       // a list with a long-context price shows it in its quiet row, greyed
@@ -80,11 +81,31 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(await tier("gpt-6-astra").evaluateAll((is) => is.map((i) => [i.value, i.placeholder])), [["", "272K"], ["", "20"], ["", "75"], ["", "2"], ["", "25"]]);
       // the 1-hour box shows the list's, else 2× its input
       assert.deepEqual(await base("claude-opus-5-5").evaluateAll((is) => is.map((i) => i.placeholder)), ["5", "25", "0.5", "6.25", "10"]);
-      assert.deepEqual(await base("gpt-6-astra").evaluateAll((is) => is.at(-1).placeholder), "20");
+      // only a Claude model has a 1-hour box: gpt-6-astra has no such write
+      // to price, so no 2× input one is shown for it (PAMI on Discord)
+      assert(await row("claude-opus-5-5").getByRole("textbox", { name: L.oneHour, exact: true }).isVisible());
+      assert(!(await row("gpt-6-astra").getByRole("textbox", { name: L.oneHour, exact: true }).isVisible()));
+      assert(!(await row("plain-1").getByRole("textbox", { name: L.oneHour, exact: true }).isVisible()));
       // where there is none, the row waits behind a link
       assert(!(await row("plain-1").locator(".mtier").isVisible()));
       assert(await row("plain-1").locator(".mtier-add").isVisible());
       assert.equal(await row("plain-1").locator("input[type=number]").count(), 0, "no number boxes");
+
+      // Closing the browser while typing has not fired change/blur yet.
+      // Both new price kinds must protect the raw input, and reverting it is clean.
+      const leaveAsked = () => page.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+      assert.equal(await leaveAsked(), false, "unchanged prices ask nothing");
+      for (const [box, value] of [[base("claude-opus-5-5").last(), "7,5"], [tier("gpt-6-astra").first(), "350K"], [tier("gpt-6-astra").nth(1), "33"]]) {
+        await box.fill(value);
+        assert.equal(await leaveAsked(), true, "a focused price edit asks before leaving");
+        await box.fill("");
+        assert.equal(await leaveAsked(), false, "reverting the raw edit asks nothing");
+      }
+      assert.deepEqual(posts, [], "typing alone has saved nothing");
 
       // decimals, with a point and with a comma, each kept as typed
       await typeIn(row("gpt-6-astra").getByRole("textbox", { name: L.cacheRead, exact: true }), "0,25");
@@ -101,7 +122,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), L.over);
       await typeIn(row("plain-1").getByRole("textbox", { name: L.over, exact: true }), "lots");
       await page.locator("#status", { hasText: L.badSize }).waitFor();
-      await row("plain-1").getByRole("textbox", { name: L.over, exact: true }).fill("200k");
+      // (Enter first: the size taken fills the price boxes from its own, and
+      // in Chromium a fill that blurs the size box lands after that fill)
+      await typeIn(row("plain-1").getByRole("textbox", { name: L.over, exact: true }), "200k");
       await typeIn(row("plain-1").getByRole("textbox", { name: L.long + " · " + L.input, exact: true }), "2,5");
       assert.deepEqual(await tier("plain-1").evaluateAll((is) => is.map((i) => i.value)), ["200K", "2.5", "4", "0.1", "0"]);
       assert.equal(await page.evaluate(() => scrollY), y, "nothing scrolled the page");

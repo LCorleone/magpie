@@ -60,6 +60,9 @@ func (l *Library) sync() *Result {
 		l.syncInstructions(t, b, res)
 		l.syncMCP(t, b, res)
 	}
+	// an edit made in an agent's copy of a skill goes to the library first,
+	// for the others to get rather than be undone (takeEdits)
+	l.takeEdits(all, res)
 	// ~/.agents/skills first: an agent that reads it too gets no second
 	// link to what is there already
 	shared := realDir(sharedSkillsDir())
@@ -200,6 +203,7 @@ type SkillView struct {
 	Source      string            `json:"source,omitempty"`
 	Kind        string            `json:"kind"`             // github, folder, or "" for one kept in the library
 	Origin      string            `json:"origin,omitempty"` // on GitHub, as CC Switch installed it: it can be updated from there
+	Repo        string            `json:"repo,omitempty"`   // the repository it came from, however it came in, for the page to group by
 	Icon        string            `json:"icon,omitempty"`
 	Agents      []string          `json:"agents"`
 	Missing     bool              `json:"missing,omitempty"` // its folder is gone
@@ -298,8 +302,9 @@ func Read(problems []Problem) (*View, error) {
 		}
 		v.Servers = append(v.Servers, sv)
 	}
+	tr := &tracer{}
 	for _, s := range l.Skills {
-		sv := SkillView{Name: s.Name, Agents: append([]string{}, s.Agents...), Icon: skillIcon(s), Problems: of("skill:" + s.Name)}
+		sv := SkillView{Name: s.Name, Agents: append([]string{}, s.Agents...), Icon: skillIcon(s), Problems: of("skill:" + s.Name), Repo: tr.repoOf(s)}
 		if s.Source != nil {
 			sv.Source, sv.Kind = s.Source.String(), s.Source.Kind
 		}

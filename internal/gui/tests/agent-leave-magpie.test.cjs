@@ -36,7 +36,7 @@ const fresh = () => ({
 function server(lang, posts) {
   let cur = fresh();
   const reply = (route, extra = {}) => route.fulfill({ json: { ...cur, ...extra, settings: { lang, theme: "light" } } });
-  return async (route) => {
+  const handle = async (route) => {
     const req = route.request(), url = new URL(req.url());
     const json = (data) => route.fulfill({ json: data });
     if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs = {lang:"${lang}",theme:"light",web:true};` });
@@ -70,6 +70,9 @@ function server(lang, posts) {
     const contentType = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png" }[path.extname(file)];
     await route.fulfill({ body: await fs.readFile(file), contentType });
   };
+  // Claude Code off magpie, as the next /api/state says too
+  handle.unwire = () => { cur = JSON.parse(JSON.stringify(cur)); cur.agents.find((x) => x.id === "claude").wired = false; };
+  return handle;
 }
 
 const words = {
@@ -89,7 +92,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const errors = [], posts = [], dialogs = [];
       page.on("pageerror", (e) => errors.push(e.message));
       page.on("dialog", (d) => { dialogs.push(d.message()); d.dismiss(); });
-      await page.route("**/*", server(lang, posts));
+      const srv = server(lang, posts);
+      await page.route("**/*", srv);
       await page.goto("http://magpie.test/?view=agents");
       await page.locator(`${row} .ag-conn`).waitFor();
       const missing = await page.evaluate(() => [
@@ -173,7 +177,11 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
 
       // the switch says what it started the agent on, and why
       const s = page.locator(`${row} .ag-conn`);
-      await page.evaluate(() => { const a = state.agents.find((x) => x.id === "claude"); a.wired = false; renderAgents(); });
+      // (off on the server too: closing the model list read /api/state again,
+      // which put the switch back on under a click in Chromium)
+      srv.unwire();
+      await page.evaluate(async () => { state = await api("state"); renderAgents(); });
+      await page.waitForFunction((r) => document.querySelector(r + " .ag-conn")?.getAttribute("aria-checked") === "false", row);
       await s.click();
       await page.waitForFunction((r) => document.querySelector(r + " .ag-conn")?.getAttribute("aria-checked") === "true", row);
       assert.ok((await page.locator("#status").textContent()).includes(w.connected), await page.locator("#status").textContent());

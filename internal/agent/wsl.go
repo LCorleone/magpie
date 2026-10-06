@@ -396,6 +396,16 @@ func wslFound(d distro) bool {
 	return false
 }
 
+// ListsFor is whose model lists an agent's are (provider.CatalogFor): its
+// own id's, or, for one in a WSL distro, its Windows twin's (claude for
+// claude@wsl:Ubuntu). A distro's agent is written magpie's models under
+// that id and sends the gateway that id's key, so the models picked for
+// its row are the ones it is shown only when kept under that id too (#927).
+func (a *Agent) ListsFor() string {
+	id, _, _ := strings.Cut(a.ID, "@wsl:")
+	return id
+}
+
 func wslKindOf(id string) wslKind {
 	for _, k := range wslKinds {
 		if k.id == id {

@@ -30,6 +30,14 @@ func CompactSet(id string) int {
 	return compactSet(settings.Load(), id, GroupFinder())
 }
 
+// CompactSetIn is CompactSet for a caller that already holds the settings
+// and the group finder: an agent's list is built for hundreds of models at
+// magpie's start, and reading both again for each is what EffectivePriceIn
+// saves the same loop.
+func CompactSetIn(s settings.Settings, id string, find func(string) (Group, []Member, bool)) int {
+	return compactSet(s, id, find)
+}
+
 func compactSet(s settings.Settings, id string, find func(string) (Group, []Member, bool)) int {
 	if len(s.ModelCompacts) == 0 {
 		return 0

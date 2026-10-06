@@ -9,7 +9,8 @@ package library
 // a folder of the user's by that name is never touched. A copy is made
 // again on each sync once the library's skill differs from it: the page
 // says which copies differ until then (SkillView.Behind), with a button
-// that syncs.
+// that syncs. A copy edited since it was made goes to the library first,
+// when its edit is the newest (takeEdits).
 
 import (
 	"errors"

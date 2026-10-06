@@ -413,7 +413,7 @@ func CodexOrder() (map[string]int, bool) {
 }
 
 // CodexListTag names the list Codex is handed, for its ETag: magpie's models,
-// the account's own taken out of it, the order they are in, the windows set on them, and whether its OpenAI models say
+// the account's own taken out of it, the order they are in, the windows set on them, the auto-review model, and whether its OpenAI models say
 // multi-agent V1 (settings.CodexAgentsV1), so any of them changing has
 // Codex ask for the list again.
 func CodexListTag() string {
@@ -431,6 +431,10 @@ func CodexListTag() string {
 	// that isn't the working window
 	if n := settings.Load().Compact(); n != settings.WorkingWindow {
 		ms = append(ms, catalog.Model{ID: "~compact", Context: n})
+	}
+	// and the model Codex's auto-review runs on (#938)
+	if v := settings.Load().CodexAutoReview; v != "" {
+		ms = append(ms, catalog.Model{ID: "~autoreview:" + v})
 	}
 	return codexcat.PolicyTag(codexcat.Tag(ms))
 }

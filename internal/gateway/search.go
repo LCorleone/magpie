@@ -391,9 +391,18 @@ const searchSystem = "You are a web search tool. Search the web for what is aske
 // webSearch searches the web and says what it found, and on which pages:
 // for a model of a Kimi Code plan, with the plan's search service first;
 // then with the searcher's model, or, without one or when it fails, with
-// the search APIs the user set up (#419).
+// the search APIs the user set up (#419). Settings can put the search APIs
+// first (#928): the providers then search only when none of them answers.
 func (s *Server) webSearch(ctx context.Context, query string) (string, []Hit, error) {
 	var errs []error
+	apiFirst := settings.Load().SearchFirst == settings.SearchFirstAPI && len(provider.SearchAPIs()) > 0
+	if apiFirst {
+		said, hits, err := s.apiSearch(ctx, query)
+		if err == nil {
+			return said, hits, nil
+		}
+		errs = append(errs, err)
+	}
 	if p, ok := ownSearcher(ctx); ok {
 		said, hits, err := s.ownSearch(ctx, p, query)
 		if err == nil {
@@ -410,7 +419,7 @@ func (s *Server) webSearch(ctx context.Context, query string) (string, []Hit, er
 	if !errors.Is(err, errNoSearcher) || len(errs) == 0 && !apis {
 		errs = append(errs, err)
 	}
-	if !apis {
+	if !apis || apiFirst {
 		return "", nil, errors.Join(errs...)
 	}
 	said, hits, err = s.apiSearch(ctx, query)

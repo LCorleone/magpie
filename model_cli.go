@@ -27,7 +27,7 @@ const modelUsage = `usage:
                                                  say what it costs, in USD per million tokens, all four parts as
                                                  0.12,1.20,0.01,0.15; 0 is a model served for nothing, which is
                                                  a price, not the absence of one; a fifth part is a 1-hour cache
-                                                 write's (Anthropic's 2× input, what it is counted at if not given)
+                                                 write's (not given: a Claude model's is 2× input, any other's the 4th)
   magpie model price <provider/model> <in>,<out>,<cache read>,<cache write> --tier 272k <in>,<out>,<cr>,<cw>
                                                  and what a request whose input, cached tokens included, is over
                                                  272K costs, the whole request; --tier may be given again
@@ -389,10 +389,12 @@ func parsePrice(rest []string) (catalog.Price, error) {
 
 // priceDetail is the parts of a price after the two perMillion gives: its
 // cache's, and what a request over each of its sizes costs.
+// A 1-hour cache write is shown only where the price has one — a Claude
+// model's, or one given — not one no vendor bills (PAMI on Discord).
 func priceDetail(p catalog.Price) []string {
-	cache := "  · cache read " + money(p.CacheRead) + ", cache write " + money(p.CacheWrite) + " (5 min), " + money(p.OneHour()) + " (1 hour)"
-	if p.CacheWrite1h <= 0 {
-		cache += " at 2× input"
+	cache := "  · cache read " + money(p.CacheRead) + ", cache write " + money(p.CacheWrite)
+	if p.CacheWrite1h > 0 {
+		cache += " (5 min), " + money(p.CacheWrite1h) + " (1 hour)"
 	}
 	lines := []string{cache}
 	for _, t := range p.Tiers {
@@ -424,6 +426,7 @@ func anyModelPrice(ref string, rest []string) error {
 	}
 	if len(rest) == 0 {
 		if pr, ok := statedPrice(settings.Load().ModelPrices, key); ok {
+			catalog.OneHourFor(strings.TrimPrefix(key, settings.AnyProvider), &pr)
 			fmt.Println(bold.Render(perMillion(pr)), muted.Render("· "+key))
 			for _, l := range priceDetail(pr) {
 				fmt.Println(faint.Render(l))

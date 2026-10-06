@@ -868,6 +868,12 @@ func (s *Server) countOn(w http.ResponseWriter, r *http.Request, p provider.Prov
 				counts = append(counts, c)
 			}
 		}
+		// the accounts or keys the calling key may not use are left out of
+		// the counts too (#905): counted on one it may, and where it may
+		// use none, the local estimate below says the count
+		if who, held := accountHolds(r); held {
+			counts = slices.DeleteFunc(counts, func(c candidate) bool { return !accountAllowed(who, c) })
+		}
 	}
 	// the names in force, read at most once however many candidates are
 	// counted, and not at all where there are none
@@ -981,6 +987,9 @@ func (s *Server) gemini(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// one spelling, for what reads the body after — the images a model
+	// that can't see is shown in words of (image_input.go) too (#934)
+	body = geminiCamel(body)
 	var err error
 	if err := decodeRequest(body, &struct{}{}); err != nil {
 		writeError(w, provider.Gemini, 400, err.Error())
@@ -1199,6 +1208,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	// a gateway key held to some models (#882) is refused another, or a
 	// group it doesn't name with one it may not use in it
 	keyWho, keyHeld := keyHolds(r)
+	_, accHeld := accountHolds(r)
+	chose, _ := r.Context().Value(magpieChoseKey{}).(bool)
 	if keyHeld && (isGroup && !groupAllowed(keyWho, g, ms) || !isGroup && !modelAllowed(keyWho, p, model)) {
 		call.Status, call.Error = 403, "model not allowed for the gateway key"
 		writeError(w, from, 403, keyModelError(keyWho, call.Model))
@@ -1324,15 +1335,23 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 	if sealedTask {
 		cands, pl = sealedReaders(cands, pl)
 	}
-	if keyHeld {
+	var accountHeld bool // every candidate was an account or key the calling key may not use
+	if keyHeld || accHeld {
+		who := keyWho
 		var members map[string]bool
-		if isGroup {
+		if chose {
+			// magpie's own call for the key — a web search, a picture
+			// described, a Codex title: of the models the user picked, so
+			// the models don't hold it, but the spend lands on an account,
+			// and the accounts hold it too
+			who.Models = nil
+		} else if isGroup {
 			members = groupKeeps(keyWho, g, ms)
 		}
-		cands = allowedCandidates(keyWho, cands, members)
+		cands, pl, accountHeld = allowedCandidates(who, cands, pl, members)
 	}
 	if len(cands) == 0 && slices.ContainsFunc(pl.left, func(w Weighed) bool { return w.Capped > 0 }) &&
-		!slices.ContainsFunc(pl.left, func(w Weighed) bool { return !w.Barred && w.Capped == 0 }) {
+		!slices.ContainsFunc(pl.left, func(w Weighed) bool { return !w.Barred && !w.Held && w.Capped == 0 }) {
 		// every account there is is held at its usage cap: used up, as far
 		// as routing goes, until a window renews
 		msg, back := cappedError(call.Model, pl.left, time.Now())
@@ -1341,6 +1360,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		}
 		call.Status, call.Error = 429, "every account at its usage cap"
 		writeError(w, from, 429, msg)
+		turnedAway()
+		return
+	}
+	if len(cands) == 0 && accountHeld {
+		// every account or key the model had is one the calling key may
+		// not use (#905), the plan's left saying so: told before the barred
+		// and ready ones it may also have
+		call.Status, call.Error = 403, "every account outside the key's accounts"
+		writeError(w, from, 403, keyAccountsError(keyWho, call.Model))
 		turnedAway()
 		return
 	}
@@ -1506,7 +1534,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		// keepalives, for a failure to be told as the stream's error
 		hw := newHoldWriter(w, !last || again < max(lastRetries, rateRetries) || other != nil || kept.sent || autoPicks(c) && repicked < 2)
 		hw.thinkingShown = !refusesAfterThinking(c.model)
-		hw.ctx, hw.alive = r.Context(), kept
+		hw.ctx, hw.alive, hw.streams = r.Context(), kept, streams
 		if isGroup && g.FirstToken > 0 && !last && streams {
 			// slow to start, the next member is asked (Group.FirstToken)
 			hw.firstWait = time.Duration(g.FirstToken) * time.Second
@@ -1675,7 +1703,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 					// the slot is the vendor's until the reply is read to
 					// its end or the agent has gone: attempt returns then
 					defer release()
-					defer hw.watchFirst()()
+					defer hw.watch()()
 					call.Status, call.Error = s.attempt(hw, r.WithContext(ctx), from, c.p, c.model, attemptBody, &call)
 				}()
 			}
@@ -2651,6 +2679,12 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 	if proto != provider.Anthropic {
 		body = s.withoutRefused(p.ID, proto, body)
 	}
+	// Codex's image tool, which a vendor that knows no namespaces turned
+	// away before (#949)
+	dropImage := proto == provider.Responses && mayDropImageTool(p)
+	if dropImage && !s.fits(p.ID, imageToolRefused, proto) {
+		body, _ = withoutImageTool(body)
+	}
 	// a Grok subscription is given Codex's namespaced functions flat
 	// (grokBody), and Zed's plugin likewise (ZedBody); a call to one goes
 	// back under its namespace (#404)
@@ -2678,7 +2712,22 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 			ms = refusedInMessages(res.StatusCode, b, body)
 		}
 		if len(fs) == 0 && len(ms) == 0 {
-			break
+			// and a bare 400 over Codex's image tool, which a vendor
+			// that knows no namespaces gives (#949): asked once more
+			// without it
+			if !dropImage {
+				break
+			}
+			nb, had := withoutImageTool(body)
+			if !had {
+				break
+			}
+			refused = append(refused, imageToolRefused)
+			body = nb
+			if res, err = s.forward(r.Context(), p, proto, path, p.Prepare(body), r.Header); err != nil {
+				return writeError(w, proto, 502, p.Name+": "+err.Error()), err.Error(), true
+			}
+			continue
 		}
 		refused = append(refused, fs...)
 		body = withoutFields(body, fs...)
@@ -3012,7 +3061,14 @@ func (s *Server) forwardTranslated(ctx context.Context, p provider.Provider, to 
 	web := req.WebSearch
 	// the cache key was left out to see if it was what the upstream refused
 	dropped := false
+	// Codex's image tool was left out to see if it was (#949), and the
+	// request with it, to go back to when it wasn't; tried once
+	var withImage *Request
+	imageTried := false
 	for {
+		if mayDropImageTool(p) && !s.fits(p.ID, imageToolRefused, to) {
+			req, _ = withoutImageToolReq(req)
+		}
 		// only a provider that searches by itself is asked to
 		if want := web && searchesFor(p, to, model, req); want != req.WebSearch {
 			r := *req
@@ -3074,6 +3130,10 @@ func (s *Server) forwardTranslated(ctx context.Context, p provider.Provider, to 
 				// it was the key: not sent there again
 				s.markUnfit(p.ID, cacheKeyField, to)
 			}
+			if withImage != nil && err == nil {
+				// it was the image tool: not offered there again
+				s.markUnfit(p.ID, imageToolRefused, to)
+			}
 			return res, to, err
 		}
 		b, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
@@ -3110,6 +3170,18 @@ func (s *Server) forwardTranslated(ctx context.Context, p provider.Provider, to 
 			r := *req
 			r.Effort, req = "none", &r
 			continue
+		}
+		if withImage != nil {
+			// not the image tool: offered again, and the next guess tried
+			req, withImage = withImage, nil
+		} else if !imageTried && mayDropImageTool(p) && badRequest(res.StatusCode) && !wrongEndpoint(res.StatusCode, b) && !provider.CopilotRefusal(b) {
+			// a bare 400 over Codex's image tool, which a vendor's API
+			// that can't take it gives (#949): asked again without it,
+			// and not offered it again once that works
+			if r, had := withoutImageToolReq(req); had {
+				withImage, req, imageTried = req, r, true
+				continue
+			}
 		}
 		if req.CacheKey != "" && badRequest(res.StatusCode) && !wrongEndpoint(res.StatusCode, b) && !provider.CopilotRefusal(b) {
 			// a vendor that turns away fields it doesn't know is asked again

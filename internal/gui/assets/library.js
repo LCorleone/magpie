@@ -223,6 +223,9 @@
     on ||= [];
     const box = el("div", "lib-agents");
     box.style.setProperty("--lib-agent-count", all.length);
+    // the row it is put in says so (.with-agents), for its name's room:
+    // Safari before 15.4 has no :has(). Every caller appends it at once.
+    queueMicrotask(() => box.parentElement?.classList.contains("lib-row") && box.parentElement.classList.add("with-agents"));
     for (const a of all) {
       const always = opts.always?.(a) || "";
       const has = on.includes(a.id) || !!always;
@@ -781,7 +784,9 @@
       else if (a.on && rtk.offPath) row.append(tag(t("Not on PATH"), "warn", t("{agent}'s hook runs rtk by name and can't find it, so RTK does nothing for it. Put RTK on PATH above.", { agent: a.name })));
       // OpenCode 2 won't load rtk's plugin (written for OpenCode 1): it can't
       // be switched on, and one already there can be switched off
-      if (a.blocked && a.id !== "opencode") row.append(tag(t("Update RTK"), "warn", t("{agent}'s hook needs RTK 0.50 or newer: older ones only add @RTK.md to AGENTS.md, which rewrites no command. Update RTK (brew upgrade rtk, or its installer again), then switch it on.", { agent: a.name })));
+      // an agent RTK has no hook for (DeepSeek Harness): listed, with why
+      if (a.noHook) row.append(tag(t("No RTK hook"), "warn", t("RTK can't be given to {agent} yet: RTK works by rewriting the shell command an agent is about to run, and {agent}'s hooks can only allow or deny a command, not change it. RTK's installer has no option for it either (github.com/rtk-ai/rtk/issues/3847).", { agent: a.name })));
+      else if (a.blocked && a.id !== "opencode") row.append(tag(t("Update RTK"), "warn", t("{agent}'s hook needs RTK 0.50 or newer: older ones only add @RTK.md to AGENTS.md, which rewrites no command. Update RTK (brew upgrade rtk, or its installer again), then switch it on.", { agent: a.name })));
       else if (a.blocked) row.append(tag(t("Not for OpenCode 2"), "warn", a.on
         ? t("RTK's plugin is written for OpenCode 1, and OpenCode 2 refuses to load it. Switch this off until RTK supports OpenCode 2.")
         : t("RTK's plugin is written for OpenCode 1, and OpenCode 2 refuses to load it. It can be switched on once RTK supports OpenCode 2.")));
@@ -966,7 +971,8 @@
       render();
     }
   }
-  function discard() {
+  async function discard(force = false) {
+    if (force !== true && dirty() && !(await confirmDiscard())) return;
     for (const k of Object.keys(texts)) delete texts[k];
     for (const k of Object.keys(extras)) delete extras[k];
     render();
@@ -1589,7 +1595,8 @@
 
     const bar = el("div", "bar");
     if (s) bar.append(button(t("Remove from the library"), "danger", async () => {
-      if (await change("servers/remove", { name: s.name }, t("{name} is out of the library and the agents it was given to", { name: s.name }))) closeLibModal();
+      if (!await confirmRemoval(s.name, "It will be removed from the library and the agents it was given to.")) return;
+      if (await change("servers/remove", { name: s.name }, t("{name} is out of the library and the agents it was given to", { name: s.name }))) closeLibModal(true);
     }));
     bar.append(el("span", "grow"), button(t("Cancel"), "", closeLibModal));
     // send saves the form; s is then the server as saved, for a save after
@@ -1608,7 +1615,7 @@
       try {
         const was = await send();
         report(lib.result, was ? t("{name} saved", { name: d.name }) : "");
-        closeLibModal();
+        closeLibModal(true);
         render();
       } catch (e) { err.textContent = e.message; }
     };
@@ -1645,7 +1652,8 @@
         status(t("Filled in from what you pasted"), "ok");
       } else pasteMany(found, d.agents);
     });
-    modal = { save };
+    const original = JSON.stringify(d);
+    modal = { save, dirty: () => JSON.stringify(d) !== original };
     openLib(ed);
     if (!s) requestAnimationFrame(() => name.focus());
   }
@@ -1693,7 +1701,7 @@
       }
       take(last);
       report(lib.result, t("Added {n} servers", { n: pick.size }));
-      closeLibModal();
+      closeLibModal(true);
       render();
     });
     go.disabled = !pick.size;
@@ -1810,6 +1818,12 @@
   try { folds = JSON.parse(localStorage.getItem("magpie.libSkillFolds") || "{}") || {}; } catch {}
   function saveFolds() { try { localStorage.setItem("magpie.libSkillFolds", JSON.stringify(folds)); } catch {} }
   const repoOf = (u) => (u || "").replace(/^https:\/\/github\.com\//, "").split("/").slice(0, 2).join("/");
+  // the repository a skill came from, however it came in: magpie traces
+  // one not installed from GitHub too (the skills CLI's lock, the git
+  // checkout it's in), so a repository's skills are one group (White
+  // Immortal on Discord). owner/repo on GitHub, host/path elsewhere.
+  const skillRepo = (s) => s.repo || (s.kind === "github" ? repoOf(s.source) : s.origin ? repoOf(s.origin) : "");
+  const repoURL = (r) => (/^[^/]+\.[^/]+\//.test(r) ? "https://" + r : "https://github.com/" + r);
   const MANY = 40;   // a group bigger than this starts folded, and so do its parts
   const SPLIT = 8;   // a group bigger than this is split by folder, or by name
   // Heights the rows are held to (library.css): a list's room is known
@@ -1827,9 +1841,8 @@
     if (grouped?.lib === lib && grouped.pick === pick) return grouped.groups;
     if (pick !== "source") {
       const skills = [...lib.skills].sort(byName(pick));
-      const repo = (s) => (s.kind === "github" ? repoOf(s.source) : s.origin ? repoOf(s.origin) : "");
       const g = { key: "flat", repo: "", skills, parts: null,
-        text: new Map(skills.map((s) => [s, (s.name + " " + (s.description || "") + " " + repo(s)).toLowerCase()])) };
+        text: new Map(skills.map((s) => [s, (s.name + " " + (s.description || "") + " " + skillRepo(s)).toLowerCase()])) };
       grouped = { lib, pick, groups: [g] };
       return grouped.groups;
     }
@@ -1842,7 +1855,7 @@
     for (const s of lib.skills) {
       const own = inMine.get(s.name);
       if (own) { own.skills.push(s); continue; }
-      const repo = s.kind === "github" ? repoOf(s.source) : s.origin ? repoOf(s.origin) : "";
+      const repo = skillRepo(s);
       const key = repo ? "gh:" + repo.toLowerCase() : "local";
       let g = by.get(key);
       if (!g) by.set(key, (g = { key, repo, skills: [] }));
@@ -1900,7 +1913,9 @@
     const label = (key, mono) => key || (mono ? (g.repo ? t("At the top of the repository") : t("Kept in the library")) : t("Others"));
     const order = (a, b) => (!a.key) - (!b.key) || a.mono - b.mono || a.key.localeCompare(b.key);
     if (g.repo) {
-      let m = split(g.skills, folderIn), mono = true;
+      // the folder in the repository is known of those installed from it
+      // only: one traced to it goes by its name with the rest
+      let m = g.skills.every((s) => s.kind === "github") ? split(g.skills, folderIn) : null, mono = true;
       if (!m) { mono = false; m = byStart(); }
       if (!m) return null;
       return [...m].map(([key, skills]) => ({ key, skills, mono, label: label(key, mono) })).sort(order);
@@ -2056,9 +2071,9 @@
       tags.append(rn, un);
     }
     if (g.repo) {
-      const o = button("", "lib-icon", () => browse("https://github.com/" + g.repo));
+      const o = button("", "lib-icon", () => browse(repoURL(g.repo)));
       o.append(svg(GLYPH.out, 13, 1.4));
-      o.title = t("Open {repo} on GitHub", { repo: g.repo });
+      o.title = repoURL(g.repo).startsWith("https://github.com/") ? t("Open {repo} on GitHub", { repo: g.repo }) : t("Open {repo}", { repo: g.repo });
       acts.append(o);
     }
     const chev = el("span", "chev");
@@ -2697,7 +2712,7 @@
     const bar = el("div", "bar");
     const go = button(t("Remove"), "primary danger-fill", async () => {
       const body = keep.checked ? { dir: p.dir, keep: true } : { dir: p.dir };
-      if (await change("projects/remove", body, t(keep.checked ? "{name} removed, its skills and servers kept" : "{name} removed", { name: p.name }))) { openProjects.delete(p.dir); closeLibModal(); }
+      if (await change("projects/remove", body, t(keep.checked ? "{name} removed, its skills and servers kept" : "{name} removed", { name: p.name }))) { openProjects.delete(p.dir); closeLibModal(true); }
     });
     bar.append(el("span", "grow"), button(t("Cancel"), "", closeLibModal), go);
     ed.append(bar);
@@ -2795,7 +2810,7 @@
             status(e.message, "err", 6000);
           }
           busy = false;
-          if (list.isConnected) draw();
+          if (list.isConnected) { draw(); markModalSaved(); }
         }));
       }
       return row;
@@ -2828,7 +2843,7 @@
     ed.append(head);
     ed.append(el("p", "lib-confirm", t("Every skill is taken out of {agents}. They stay in the library, to turn on again.", { agents: ids.map(nameOf).join(", ") })));
     const bar = el("div", "bar");
-    const go = button(t("Turn all off"), "primary danger-fill", async () => { go.disabled = true; if (await everySkill(ids, false)) closeLibModal(); else go.disabled = false; });
+    const go = button(t("Turn all off"), "primary danger-fill", async () => { go.disabled = true; if (await everySkill(ids, false)) closeLibModal(true); else go.disabled = false; });
     bar.append(el("span", "grow"), button(t("Cancel"), "", closeLibModal), go);
     ed.append(bar);
     modal = { save: () => go.click() };
@@ -2959,7 +2974,7 @@
     if (linked) where.push(t("{n} linked from folders of your own are only unlinked: those folders stay where they are.", { n: linked }));
     ed.append(el("p", "lib-confirm", where.join(" ")));
     const bar = el("div", "bar");
-    const go = button(t("Remove all {n}", { n }), "primary danger-fill", async () => { go.disabled = true; if (await removeEverySkill(names)) closeLibModal(); else go.disabled = false; });
+    const go = button(t("Remove all {n}", { n }), "primary danger-fill", async () => { go.disabled = true; if (await removeEverySkill(names)) closeLibModal(true); else go.disabled = false; });
     bar.append(el("span", "grow"), button(t("Cancel"), "", closeLibModal), go);
     ed.append(bar);
     modal = { save: () => go.click() };
@@ -3164,7 +3179,13 @@
     // sync makes it again
     if (s.behind?.length) {
       const b = tag(t("Copy out of date"), "lib-new link lib-behind", t("The copy in {agents} differs from the library's skill. Click to copy it again.", { agents: s.behind.map(nameOf).join(", ") }));
+      b.setAttribute("role", "button");
+      b.tabIndex = 0;
       b.onclick = (e) => { e.stopPropagation(); change("all/sync", {}, t("Copies updated")); };
+      b.onkeydown = (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault(); e.stopPropagation(); b.click();
+      };
       nm.append(b);
     }
     who.append(nm);
@@ -3223,7 +3244,7 @@
       ? t("It is taken out of every agent it was given to. The folder it was linked from stays where it is.")
       : t("It is taken out of every agent it was given to, and its folder is moved to magpie's backups.")));
     const bar = el("div", "bar");
-    const go = button(t("Remove"), "primary danger-fill", async () => { if (await change("skills/remove", { name: s.name }, t("{name} removed", { name: s.name }))) closeLibModal(); });
+    const go = button(t("Remove"), "primary danger-fill", async () => { if (await change("skills/remove", { name: s.name }, t("{name} removed", { name: s.name }))) closeLibModal(true); });
     bar.append(el("span", "grow"), button(t("Cancel"), "", closeLibModal), go);
     ed.append(bar);
     modal = { save: () => go.click() };
@@ -3541,7 +3562,7 @@
         if (miss) { err.textContent = t("{what} is needed", { what: t(miss.label) }); ed.querySelector(`[data-key="${CSS.escape(miss.key)}"]`)?.focus(); return; }
         go.disabled = true;
         go.textContent = t("Adding…");
-        if (await addServer(x, values, agents)) closeLibModal();
+        if (await addServer(x, values, agents)) closeLibModal(true);
         else { go.disabled = false; go.textContent = t("Add to the library"); }
       });
       bar.append(go);
@@ -3625,7 +3646,7 @@
       const go = button(t("Add to the library"), "primary", async () => {
         go.disabled = true;
         go.textContent = t("Adding…");
-        if (await addSkill(x, agents)) closeLibModal();
+        if (await addSkill(x, agents)) closeLibModal(true);
         else { go.disabled = false; go.textContent = t("Add to the library"); }
       });
       bar.append(go);
@@ -3639,14 +3660,22 @@
   // ---------- the dialog ----------
 
   function openLib(content) { openModal(content); $("#modal").classList.add("lib"); }
-  function closeLibModal() { modal = null; closeModal().then(() => { if (!modal) $("#modal").classList.remove("lib"); }); }
+  async function closeLibModal(saved = false) {
+    if (saved !== true && (modal?.dirty?.() ?? modalFormDirty()) && !(await confirmDiscard())) return false;
+    modal = null;
+    closeModal().then(() => { if (!modal) $("#modal").classList.remove("lib"); });
+    return true;
+  }
+  window.closeLibraryModal = () => { if (modal) closeLibModal(true); else closeModal(); };
+  window.libraryDirty = () => !!lib && dirty();
+  window.discardLibrary = () => discard(true);
   // The dialog is the providers page's; while the library has it, its
   // backdrop and Escape close it here.
   $("#modal").addEventListener("click", (e) => {
     if (modal && e.target === e.currentTarget) { e.stopImmediatePropagation(); closeLibModal(); }
   }, true);
   document.addEventListener("keydown", (e) => {
-    if (modal && e.key === "Escape") { e.stopImmediatePropagation(); closeLibModal(); }
+    if (!confirmationPending && modal && e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); closeLibModal(); }
   }, true);
   // leaving the page with the shared text not saved asks first
   window.addEventListener("beforeunload", (e) => { if (lib && dirty()) e.preventDefault(); });

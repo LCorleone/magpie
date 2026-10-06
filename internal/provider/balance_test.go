@@ -152,6 +152,17 @@ func TestKeyBalances(t *testing.T) {
 	if got[0].Windows == nil {
 		t.Fatal("windows is null in the JSON")
 	}
+	// each key's balance is kept over time, a failed one not
+	bh := readBalanceHist()
+	if pts := bh[quotaHistKey("relay", "main")]; len(pts) != 1 || pts[0].Amount != 2 {
+		t.Fatalf("main's balance history = %+v", pts)
+	}
+	if pts := bh[quotaHistKey("relay", "spare")]; len(pts) != 1 || pts[0].Amount != 0.5 {
+		t.Fatalf("spare's balance history = %+v", pts)
+	}
+	if len(bh) != 2 {
+		t.Fatalf("balance history = %+v", bh)
+	}
 }
 
 func TestReadAiHubMix(t *testing.T) {
@@ -370,7 +381,8 @@ func TestBalanceURLNamesTheKey(t *testing.T) {
 
 // A known balance query read with its field left empty (#881): new-api's
 // for a key and for the account, OpenAI's old credit grants, a sub2api
-// panel's profile; a query magpie doesn't know still asks for the field.
+// panel's profile and its query for a key; a query magpie doesn't know
+// still asks for the field.
 func TestKnownBalanceFieldLeftEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -382,6 +394,14 @@ func TestKnownBalanceFieldLeftEmpty(t *testing.T) {
 			w.Write([]byte(`{"object":"credit_summary","total_granted":20,"total_used":7.5,"total_available":12.5}`))
 		case "/api/v1/user/profile":
 			w.Write([]byte(`{"code":0,"data":{"balance":4.2}}`))
+		case "/v1/usage":
+			// sub2api's reply for a key on the wallet, its key alone asked
+			if r.Header.Get("Authorization") != "Bearer sk-one" {
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":{"type":"authentication_error","message":"Invalid API key"}}`))
+				return
+			}
+			w.Write([]byte(`{"mode":"unrestricted","isValid":true,"planName":"钱包余额","remaining":7.25,"unit":"USD","balance":7.25}`))
 		default:
 			w.Write([]byte(`{"left":1}`))
 		}
@@ -394,6 +414,7 @@ func TestKnownBalanceFieldLeftEmpty(t *testing.T) {
 		{"/v1/dashboard/billing/credit_grants", "", "$12.50"},
 		{"/dashboard/billing/credit_grants", "", "$12.50"},
 		{"/api/v1/user/profile", "eyJ.a.b", "$4.20"},
+		{"/v1/usage", "", "$7.25"},
 	} {
 		p := Provider{ID: "relay", Chat: srv.URL + "/v1", Key: "sk-one", BalanceURL: srv.URL + c.path, BalanceToken: c.token}
 		if got, ok, err := Balance(context.Background(), p); err != nil || !ok || got != c.want {

@@ -80,6 +80,7 @@ func All() []*Agent {
 		cursorLocal(),
 		zed(home, cfg),
 		vscode(home, cfg),
+		vscodeInsidersAgent(home, cfg),
 		air(home, cfg),
 		copilot(home),
 		crush(home, cfg),

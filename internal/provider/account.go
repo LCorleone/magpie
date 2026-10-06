@@ -737,6 +737,9 @@ func Accounts() []Provider {
 	if p, ok := mimoAccount(); ok {
 		out = append(out, p)
 	}
+	if p, ok := siwcAccount(); ok {
+		out = append(out, p)
+	}
 	for _, agent := range []string{"gemini", "antigravity"} {
 		if p, ok := googleAccountOf(agent); ok {
 			out = append(out, p)
@@ -749,7 +752,7 @@ func Accounts() []Provider {
 
 // builtinOrder is the built-ins' ids in the order Accounts lists them.
 var builtinOrder = slices.Concat([]string{"claude", "codex", "copilot", "cursor", "grok", "devin", "kiro", "zcode",
-	"workbuddy", WorkBuddyAIID, CommandCodePlanID}, qoderAgents, []string{"zed", "factory", MiMoID, "gemini", "antigravity"})
+	"workbuddy", WorkBuddyAIID, CommandCodePlanID}, qoderAgents, []string{"zed", "factory", MiMoID, ChatGPTAPIID, "gemini", "antigravity"})
 
 // placeMoved adds the plugins' accounts to the built-ins': one a built-in
 // was moved onto stands where the built-in stood, the others go last.

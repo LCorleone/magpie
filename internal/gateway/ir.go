@@ -387,16 +387,6 @@ func saidAnything(parts []Part) bool {
 	return false
 }
 
-// hasTool reports whether a result calls any tool.
-func hasTool(parts []Part) bool {
-	for _, p := range parts {
-		if p.Kind == ToolCall {
-			return true
-		}
-	}
-	return false
-}
-
 // argsOf is a tool call's arguments as a JSON object, never empty.
 func argsOf(p Part) json.RawMessage {
 	if len(p.Args) == 0 || strings.TrimSpace(string(p.Args)) == "" {

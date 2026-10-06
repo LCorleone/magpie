@@ -1,7 +1,9 @@
 // Run with Node's test runner and Playwright on the module path; see README.md.
 // Settings › About › Command line (PAMI on Discord): whether `magpie` in a
 // terminal opened now runs this app, said for each shell (a dot, no left
-// border), and Add to PATH, which posts /api/cli and shows the answer. A
+// border), and Add to PATH, which posts /api/cli and shows the answer. On
+// Windows a program not named magpie.exe (the site's portable download,
+// #942) is said to get a magpie.cmd that runs it. A
 // shell whose PATH lacks the folder has its own button naming its profile,
 // and only that button posts that shell. On Windows PowerShell and cmd are
 // listed, with no profile to write; a translocated app gets no button. No
@@ -17,18 +19,24 @@ const assets = path.resolve(__dirname, "../assets");
 
 const words = {
   en: { row: "Command line", add: "Add to PATH", none: "can't find the magpie command", ours: "runs this app", fish: "Add to ~/.config/fish/config.fish",
-    added: "open a new terminal window", ps: "PowerShell and cmd take up a change in new windows", moved: "moved to Applications" },
+    added: "open a new terminal window", ps: "PowerShell and cmd take up a change in new windows", moved: "moved to Applications",
+    shimTitle: "writes magpie.cmd there, which runs magpie-windows-amd64.exe", shimAdded: "magpie.cmd beside magpie-windows-amd64.exe runs it as magpie", shimRuns: "which runs magpie-windows-amd64.exe" },
   zh: { row: "命令行", add: "添加到 PATH", none: "新终端里找不到 magpie 命令", ours: "运行这个 app", fish: "添加到 ~/.config/fish/config.fish",
-    added: "新开一个终端窗口", ps: "PowerShell 和 cmd 在新窗口里生效", moved: "移到「应用程序」" },
+    added: "新开一个终端窗口", ps: "PowerShell 和 cmd 在新窗口里生效", moved: "移到「应用程序」",
+    shimTitle: "写一个 magpie.cmd 来运行 magpie-windows-amd64.exe", shimAdded: "magpie-windows-amd64.exe 旁边的 magpie.cmd", shimRuns: "它运行 magpie-windows-amd64.exe" },
 };
 
 const EXE = "/Applications/magpie.app/Contents/MacOS/magpie";
 
 function view(ctl) {
   if (ctl.windows) {
-    const exe = "C:\\Users\\u\\AppData\\Local\\magpie\\magpie.exe";
-    return { exe, ours: ctl.added, command: ctl.added ? exe : "", dir: "C:\\Users\\u\\AppData\\Local\\magpie", windows: true,
-      shells: ["PowerShell", "cmd"].map((name, i) => ({ name, default: i === 0, known: true, ours: ctl.added, command: ctl.added ? exe : "" })) };
+    // the site's portable download (#942) runs as magpie through the
+    // magpie.cmd Add writes beside it
+    const dir = ctl.portable ? "D:\\portable_app" : "C:\\Users\\u\\AppData\\Local\\magpie";
+    const exe = dir + (ctl.portable ? "\\magpie-windows-amd64.exe" : "\\magpie.exe"), shim = ctl.portable ? dir + "\\magpie.cmd" : "";
+    const cmd = ctl.added ? shim || exe : "";
+    return { exe, ours: ctl.added, command: cmd, dir, windows: true, shim,
+      shells: ["PowerShell", "cmd"].map((name, i) => ({ name, default: i === 0, known: true, ours: ctl.added, command: cmd })) };
   }
   const link = "/Users/u/.local/bin/magpie";
   return {
@@ -149,6 +157,21 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.match(await row.locator(".cli-note").innerText(), new RegExp(w.ps));
         await row.locator("button.cli-add").click();
         await row.locator('.cli-shell.on[data-shell="cmd"]').waitFor();
+        assert.deepEqual(ctl.posts, [{}]);
+        assert.deepEqual(errors, []);
+        await page.context().close();
+      });
+
+      await t.test(lang + ": Windows' portable download gets a magpie.cmd, and says so (#942)", async () => {
+        const ctl = { posts: [], gets: 0, windows: true, portable: true };
+        const errors = [];
+        const { page, row } = await open(browser, lang, ctl, errors);
+        const add = row.locator("button.cli-add");
+        assert.match(await add.getAttribute("title"), new RegExp(w.shimTitle));
+        await add.click();
+        await row.locator(".sub", { hasText: "D:\\portable_app\\magpie.cmd" }).waitFor();
+        assert.match(await row.locator(".sub").innerText(), new RegExp(w.shimRuns));
+        assert.match(await page.locator("#status").innerText(), new RegExp(w.shimAdded));
         assert.deepEqual(ctl.posts, [{}]);
         assert.deepEqual(errors, []);
         await page.context().close();

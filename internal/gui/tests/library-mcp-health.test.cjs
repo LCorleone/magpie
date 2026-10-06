@@ -105,7 +105,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         await page.route("http://magpie.test/**", server(lang, checks));
         await page.goto("http://magpie.test/");
         await page.locator('button[data-view="library"]').click();
-        await page.locator("#view-library .lib-row").first().waitFor();
+        await page.locator("#view-library .lib-body:not(.lib-skel) .lib-row").first().waitFor();
         const status = (name) => page.locator(`#view-library .lib-health[data-server="${name}"]`);
 
         // every server asked for at once, each showing it's being checked

@@ -37,6 +37,26 @@ func TestModelPriceTierCmd(t *testing.T) {
 		t.Errorf("magpie model prices: %q; want its tier", out)
 	}
 
+	// PAMI on Discord: four parts give no 1-hour cache write but a Claude
+	// model's — gpt-6-astra was shown "$20 (1 hour) at 2× input", a write
+	// OpenAI has no price for
+	if strings.Contains(out, "1 hour") || strings.Contains(out, "2× input") {
+		t.Errorf("magpie model price a/m: %q; want no 1-hour cache write", out)
+	}
+	if pr.OneHour() != 12.5 {
+		t.Errorf("a/m 1h = %v, want the 5-minute 12.5", pr.OneHour())
+	}
+	if err := modelCmd([]string{"price", "a/claude-opus-5-5", "3,15,0.3,3.75"}); err != nil {
+		t.Fatal(err)
+	}
+	if pr, _ := provider.EffectivePrice("a", "claude-opus-5-5"); pr.OneHour() != 6 {
+		t.Errorf("claude 1h = %+v, want 2× input", pr)
+	}
+	out, _ = said(t, func() error { return modelCmd([]string{"price", "a/claude-opus-5-5"}) })
+	if !strings.Contains(out, "$6.00 (1 hour)") && !strings.Contains(out, "$6 (1 hour)") {
+		t.Errorf("magpie model price a/claude-opus-5-5: %q; want its 1-hour cache write", out)
+	}
+
 	if err := modelCmd([]string{"price", "a/only-a", "5,25,0.5,6.25,8"}); err != nil {
 		t.Fatal(err)
 	}

@@ -18,7 +18,9 @@ package agent
 // Chat's model picker, a model is kept in VS Code's storage, not here.
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -41,9 +43,39 @@ const vscodeUA = "githubcopilotchat"
 // vscodeGroup is how magpie's group is found among the user's.
 var vscodeGroup = map[string]string{"vendor": "customendpoint", "name": magpieID}
 
+// vscodeKind is one build of VS Code, each with its own User folder, its
+// own app and its own row: VS Code, and VS Code Insiders beside it (wani on
+// Discord), whose chat is the same and is set up the same way.
+type vscodeKind struct {
+	id, name, folder, bin string
+	aliases               []string
+	// ua is what its chat's User-Agent begins with: Stable is told by it.
+	// Insiders' chat names itself the same, so it is told by its token
+	// instead (gateway.TokenFor), which its models send.
+	ua []string
+}
+
+var (
+	vscodeStable   = vscodeKind{id: "vscode", name: "VS Code", folder: "Code", bin: "code", aliases: []string{"vs-code", "copilot-chat", "vscode-chat"}, ua: []string{vscodeUA}}
+	vscodeInsiders = vscodeKind{id: "vscode-insiders", name: "VS Code Insiders", folder: "Code - Insiders", bin: "code-insiders", aliases: []string{"vs-code-insiders", "code-insiders"}}
+)
+
+// token is the bearer token its models send: Stable's the gateway's own,
+// as it always was.
+func (k vscodeKind) token() string {
+	if k.ua != nil {
+		return gateway.Token
+	}
+	return gateway.TokenFor(k.id)
+}
+
 // VS Code keeps its User folder under Application Support on macOS, Roaming
-// AppData on Windows and XDG on Linux.
-func vscode(home, cfg string) *Agent {
+// AppData on Windows and XDG on Linux, Insiders' beside it.
+func vscode(home, cfg string) *Agent { return vscodeOf(vscodeStable, home, cfg) }
+
+func vscodeInsidersAgent(home, cfg string) *Agent { return vscodeOf(vscodeInsiders, home, cfg) }
+
+func vscodeOf(k vscodeKind, home, cfg string) *Agent {
 	switch runtime.GOOS {
 	case "darwin":
 		cfg = filepath.Join(home, "Library", "Application Support")
@@ -53,13 +85,15 @@ func vscode(home, cfg string) *Agent {
 			cfg = filepath.Join(home, "AppData", "Roaming")
 		}
 	}
-	return vscodeAt(filepath.Join(cfg, "Code", "User"))
+	return vscodeKindAt(k, filepath.Join(cfg, k.folder, "User"))
 }
 
-func vscodeAt(dir string) *Agent {
+func vscodeAt(dir string) *Agent { return vscodeKindAt(vscodeStable, dir) }
+
+func vscodeKindAt(k vscodeKind, dir string) *Agent {
 	path := filepath.Join(dir, "settings.json")
 	models := filepath.Join(dir, "chatLanguageModels.json")
-	key := func(p string) string { return "vscode:" + p + ":model" }
+	key := func(p string) string { return k.id + ":" + p + ":model" }
 	getAt := func(p string) string { v, _ := edit.GetJSON(p, vscodeDefault); return v }
 	get := func() string { return getAt(path) }
 	ours := func() (string, bool) { return edit.GetJSONItem(models, vscodeGroup) }
@@ -100,7 +134,7 @@ func vscodeAt(dir string) *Agent {
 	}
 	// setGroup writes magpie's group in the default's and each profile's
 	setGroup := func(lms []string) error {
-		v := vscodeGroupJSON()
+		v := vscodeGroupJSON(k)
 		for _, lm := range append([]string{models}, lms...) {
 			if cur, ok := edit.GetJSONItem(lm, vscodeGroup); ok && sameJSON(cur, v) {
 				continue
@@ -112,12 +146,22 @@ func vscodeAt(dir string) *Agent {
 		return nil
 	}
 	return atomic(&Agent{
-		ID: "vscode", Name: "VS Code", Icon: "vscode", Aliases: []string{"vs-code", "copilot-chat", "vscode-chat"}, Spelled: prefixed,
-		Bin: "code", Dir: dir, Path: path,
-		UA: []string{vscodeUA},
+		ID: k.id, Name: k.name, Icon: "vscode", Aliases: k.aliases, Spelled: prefixed,
+		Bin: k.bin, Dir: dir, Path: path,
+		UA: k.ua,
+		detect: func() bool {
+			if Taken(dir) {
+				return false
+			}
+			if isDir(dir) {
+				return true
+			}
+			bin, err := exec.LookPath(k.bin)
+			return err == nil && vscodeCodeBinary(bin)
+		},
 		Notice: func() string {
 			if joined() {
-				return "magpie's models are in VS Code's Chat model picker, under magpie, in each of its profiles (VS Code 1.122 or later). If they don't show, run Developer: Reload Window in VS Code."
+				return "magpie's models are in " + k.name + "'s Chat model picker, under magpie, in each of its profiles (VS Code 1.122 or later). If they don't show, run Developer: Reload Window in " + k.name + "."
 			}
 			return ""
 		},
@@ -154,10 +198,10 @@ func vscodeAt(dir string) *Agent {
 			if !ok || !gjson.Get(g, "models.0").Exists() {
 				return ""
 			}
-			return wiringOff("VS Code", models, func(k string) (string, bool) {
+			return wiringOff(k.name, models, func(k string) (string, bool) {
 				r := gjson.Get(g, "models.0."+k)
 				return r.String(), r.Exists()
-			}, "url", vscodeURL(), "requestHeaders.Authorization", "Bearer "+gateway.Token)
+			}, "url", vscodeURL(), "requestHeaders.Authorization", "Bearer "+k.token())
 		},
 		Fields: []Field{{
 			Key: "model", Label: "model", Get: model,
@@ -203,10 +247,42 @@ func vscodeAt(dir string) *Agent {
 				if v := cur["model"]; v != "" && v != "auto" && !usesMagpie(v) {
 					own = append(own, Option{Value: v, Icon: modelIcon("", v)})
 				}
-				return append(group("VS Code", own), viaMagpie("vscode", magpieID+"/")...)
+				return append(group(k.name, own), viaMagpie(k.id, magpieID+"/")...)
 			},
 		}},
 	}, path, models, stashPath())
+}
+
+// Cursor can install its own launcher as code. Only a known product identity
+// rules it out: wrappers without readable metadata keep the PATH fallback.
+func vscodeCodeBinary(bin string) bool {
+	resolved, err := filepath.EvalSymlinks(bin)
+	if err != nil {
+		return true
+	}
+	dir := filepath.Dir(resolved)
+	if !strings.EqualFold(filepath.Base(dir), "bin") {
+		return true
+	}
+	// Launchers live in app/bin or in bin beside resources/app. Do not
+	// search arbitrary ancestors of an unknown wrapper.
+	for _, path := range []string{
+		filepath.Join(dir, "..", "product.json"),
+		filepath.Join(dir, "..", "resources", "app", "product.json"),
+	} {
+		var product struct {
+			ApplicationName string `json:"applicationName"`
+			NameShort       string `json:"nameShort"`
+		}
+		b, err := os.ReadFile(path)
+		if err != nil || json.Unmarshal(b, &product) != nil {
+			continue
+		}
+		if strings.EqualFold(product.ApplicationName, "cursor") || strings.EqualFold(product.NameShort, "Cursor") {
+			return false
+		}
+	}
+	return true
 }
 
 // vscodeProfiles are the settings.json and chatLanguageModels.json of the
@@ -256,10 +332,10 @@ func vscodeProfiles(dir string) (settings, models []string) {
 func vscodeURL() string { return gatewayV1() + "/chat/completions" }
 
 // vscodeGroupJSON is magpie's group in chatLanguageModels.json: the catalog
-// as VS Code's chat is shown it.
-func vscodeGroupJSON() map[string]any {
+// as the chat of the VS Code k is shown it.
+func vscodeGroupJSON(k vscodeKind) map[string]any {
 	list := []any{}
-	for _, m := range magpieModels("vscode") {
+	for _, m := range magpieModels(k.id) {
 		context := m.Context
 		if context == 0 {
 			context = 128000 // what VS Code takes a model of unknown window for
@@ -276,7 +352,7 @@ func vscodeGroupJSON() map[string]any {
 			"id": m.ID, "name": m.Name, "url": vscodeURL(),
 			"toolCalling": true, "vision": m.Images,
 			"contextWindow": context, "maxOutputTokens": output,
-			"requestHeaders": map[string]string{"Authorization": "Bearer " + gateway.Token},
+			"requestHeaders": map[string]string{"Authorization": "Bearer " + k.token()},
 		}
 		if len(m.Efforts) > 0 {
 			entry["supportsReasoningEffort"] = m.Efforts

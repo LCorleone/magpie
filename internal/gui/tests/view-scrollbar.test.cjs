@@ -39,7 +39,7 @@ function serve() {
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   test(`${engine}: a long page shows a scrollbar, on the Mac too`, async (t) => {
-    const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+    const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium", ignoreDefaultArgs: ["--hide-scrollbars"] }));
     const page = await (await browser.newContext({ viewport: { width: 900, height: 500 }, reducedMotion: "reduce" })).newPage();
     t.after(() => browser.close());
     page.setDefaultTimeout(5000);

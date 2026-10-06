@@ -930,7 +930,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 	cliBehindRoutes(mux)
 	gatewayFixRoutes(mux)
 	gatewayModeRoutes(mux)
-	mux.HandleFunc("GET /api/settings",func(rw http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/settings", func(rw http.ResponseWriter, r *http.Request) {
 		access.MigrateLegacyLANKeyBestEffort()
 		writeJSON(rw, settingsState())
 	})
@@ -972,6 +972,8 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		in.CompactAt = cur.CompactAt     // and so is the threshold
 
 		in.CodexTitles = cur.CodexTitles // set on its own (codex-titles below)
+		// and so is the model Codex's auto-review runs on (codex-auto-review)
+		in.CodexAutoReview = cur.CodexAutoReview
 		in.ChinaMirror = cur.ChinaMirror // the Plugins page's, set on its own
 		// which Codex accounts spend a reset by themselves, set on the Usage card
 		in.CodexAutoReset = cur.CodexAutoReset
@@ -1154,6 +1156,30 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		s := settings.Load()
 		s.CodexTitles = v
 		if err := settings.Save(s); err != nil {
+			fail(rw, err)
+			return
+		}
+		writeJSON(rw, settingsState())
+	})
+	// the model Codex's auto-review runs on (#938): "" as Codex picks it,
+	// or a model's id, named in every entry of Codex's list
+	mux.HandleFunc("POST /api/settings/codex-auto-review", func(rw http.ResponseWriter, r *http.Request) {
+		var in struct{ Model string }
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			fail(rw, err)
+			return
+		}
+		v := strings.TrimSpace(in.Model)
+		if v != "" {
+			// Resolve intentionally accepts arbitrary names under a known
+			// provider. An approval reviewer must be a model or group magpie
+			// actually lists, including providers kept unlisted for routing.
+			if !slices.ContainsFunc(provider.Served(), func(e provider.Entry) bool { return e.ID == v }) {
+				fail(rw, fmt.Errorf("no model %s for Codex's auto-review", v))
+				return
+			}
+		}
+		if err := provider.SetCodexAutoReview(v); err != nil {
 			fail(rw, err)
 			return
 		}

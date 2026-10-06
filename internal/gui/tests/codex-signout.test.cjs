@@ -48,8 +48,8 @@ function serve(lang, logins, posts, refuse) {
 }
 
 const words = {
-  en: { out: "Sign out", cancel: "Cancel", ask: "Sign Codex out of me@example.com?", text: /Codex is signed out, as codex logout does/, done: "Codex signed out of me@example.com", refused: /Codex is signed in to me@example\.com now: sign it in to another of its accounts first/ },
-  zh: { out: "退出登录", cancel: "取消", ask: "让 Codex 退出 me@example.com？", text: /codex logout/, done: "Codex 已退出 me@example.com", refused: /Codex 当前登录的是 me@example\.com：请先在另一个账号上点「使用」/ },
+  en: { out: "Sign out", remove: "Remove", cancel: "Cancel", ask: "Sign Codex out of me@example.com?", text: /Codex is signed out, as codex logout does/, done: "Codex signed out of me@example.com", refused: /Codex is signed in to me@example\.com now: sign it in to another of its accounts first/ },
+  zh: { out: "退出登录", remove: "移除", cancel: "取消", ask: "让 Codex 退出 me@example.com？", text: /codex logout/, done: "Codex 已退出 me@example.com", refused: /Codex 当前登录的是 me@example\.com：请先在另一个账号上点「使用」/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -112,12 +112,31 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.deepEqual(errors, []);
     });
 
-    test(`${engine} ${lang}: with another account saved, the one in use has no Sign out`, async (t) => {
-      const { page, errors } = await open(t, two);
+    // vincentzhang1_55530 on Discord: the one in use is removed as the
+    // others are, and Codex is signed in to another first (ForgetLogin)
+    test(`${engine} ${lang}: with another account saved, the one in use has Remove, not Sign out`, async (t) => {
+      const { page, errors, posts } = await open(t, two);
       for (const user of ["me@example.com", "work@example.com"]) {
         const row = page.locator(".editor .acc", { hasText: user });
         assert.equal(await row.getByRole("button", { name: w.out, exact: true }).count(), 0, user);
       }
+      const remove = page.locator(".editor .acc", { hasText: "me@example.com" }).getByRole("button", { name: w.remove, exact: true });
+      assert.equal(await remove.count(), 1, "the one in use has Remove");
+      assert.ok(await remove.getAttribute("title"));
+      await remove.click();
+      const confirm = page.locator("dialog.action-confirm[open]");
+      await confirm.waitFor();
+      assert.deepEqual(posts, [], "Remove waits for confirmation");
+      await confirm.getByRole("button", { name: w.cancel, exact: true }).click();
+      assert.deepEqual(posts, [], "Cancel keeps the signed-in account");
+      assert.equal(await remove.count(), 1, "Cancel keeps the account's Remove button");
+      await remove.click();
+      await confirm.getByRole("button", { name: w.remove, exact: true }).click();
+      await page.waitForFunction(() => document.querySelector("#status")?.textContent.includes("me@example.com"));
+      assert.deepEqual(posts, [{ agent: "codex", user: "me@example.com" }]);
+      const missing = await page.evaluate(() => ["Codex is signed in to another of its accounts, and magpie forgets this one; the account itself is untouched"]
+        .filter((k) => !I18N.zh[k] || !I18N.ja[k] || !I18N.de[k]));
+      assert.deepEqual(missing, [], "every string has its zh, ja and de");
       assert.deepEqual(errors, []);
     });
 

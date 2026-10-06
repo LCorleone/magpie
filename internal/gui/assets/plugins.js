@@ -848,7 +848,14 @@
     const rm = el("button", "text quiet", b === "remove" ? t(moved.length ? "Moving back…" : "Removing…") : t("Remove"));
     rm.title = moved.length ? t("{names} goes back to the built-in first, then the plugin is removed", { names }) : t("Removes the plugin and what it installed; its sign-ins are kept until you sign out");
     rm.disabled = busy.size > 0;
-    rm.onclick = () => { if (moved.length) { asking = { pkg, op: "remove" }; draw(); } else remove(); };
+    rm.onclick = async () => {
+      if (moved.length) {
+        asking = { pkg, op: "remove" };
+        draw();
+        return;
+      }
+      if (await confirmRemoval(l?.name || pkg, rm.title)) remove();
+    };
     val.append(onoff, rm);
     r.append(val);
     r.onclick = (ev) => { if (!ev.target.closest("button, .pm-opts")) detail(l || (isGit(e.spec) ? { package: e.spec, name: e.package || e.spec, npm: { version: e.version, repository: gitWeb(e.spec) } } : { package: pkg, name: label(e.spec), npm: { version: e.latest } })); };
@@ -861,6 +868,9 @@
   function optionsEditor(e) {
     const box = el("div", "pm-opts");
     const ta = document.createElement("textarea");
+    ta.setAttribute("aria-label", t("Options"));
+    ta.setAttribute("aria-describedby", "pluginOptionsNote pluginOptionsError");
+    ta.setAttribute("aria-invalid", String(!!editing.error));
     ta.spellcheck = false;
     ta.value = editing.text;
     ta.rows = Math.min(14, Math.max(4, editing.text.split("\n").length + 1));
@@ -870,8 +880,11 @@
       if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); save(); }
     };
     const err = el("div", "pm-opts-err", editing.error);
+    err.id = "pluginOptionsError";
+    err.setAttribute("role", "alert");
     const bar = el("div", "pm-opts-bar");
     const note = el("span", "", e.options ? t("Applied to the next request") : t("Not set: these are its package's example"));
+    note.id = "pluginOptionsNote";
     const save = () => {
       let v;
       try { v = JSON.parse(editing.text || "{}"); } catch (x) { editing.error = t("Not JSON: {error}", { error: x.message }); return draw(); }
@@ -887,7 +900,11 @@
     if (e.options) {
       const clr = el("button", "text quiet", t("Clear"));
       clr.title = t("Runs it with no options");
-      clr.onclick = () => { editing = null; act(name(e.spec), "options", { spec: e.spec, options: null }, () => status(t("{name}'s options cleared", { name: shownName(e) }), "ok")); };
+      clr.onclick = async () => {
+        if (!await confirmAction(t("Clear"), t("Saved middleware options will be removed. The plugin will run with no options."), t("Clear"))) return;
+        editing = null;
+        act(name(e.spec), "options", { spec: e.spec, options: null }, () => status(t("{name}'s options cleared", { name: shownName(e) }), "ok"));
+      };
       bar.append(clr);
     }
     bar.append(no, ok);

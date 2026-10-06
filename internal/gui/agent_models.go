@@ -92,7 +92,7 @@ func agentFields(a *agent.Agent, vals map[string]string) []fieldJSON {
 // with every one taken out they have no catalog entry left, yet the line is
 // the one way to put them back (#356): it stays while any is hidden.
 func agentModelCount(a *agent.Agent, fields []fieldJSON) *modelCountJSON {
-	id := a.ID
+	id := a.ListsFor()
 	if takesCatalog(fields) || a.ListsModels {
 		return modelCount(id)
 	}
@@ -144,7 +144,7 @@ func usedBy(a *agent.Agent, vals map[string]string, e provider.Entry) bool {
 		if v == e.ID || strings.HasSuffix(v, "/"+e.ID) {
 			return true
 		}
-		if acc := e.Provider.Account; e.Group == "" && acc != nil && acc.Agent == a.ID && v == e.Model {
+		if acc := e.Provider.Account; e.Group == "" && acc != nil && acc.Agent == a.ListsFor() && v == e.Model {
 			return true
 		}
 	}
@@ -152,13 +152,14 @@ func usedBy(a *agent.Agent, vals map[string]string, e provider.Entry) bool {
 }
 
 func agentModelList(a *agent.Agent) []agentModelJSON {
-	listed, _ := provider.ListedFor(a.ID)
-	off := provider.HiddenModels(a.ID)
+	id := a.ListsFor()
+	listed, _ := provider.ListedFor(id)
+	off := provider.HiddenModels(id)
 	vals := a.Values()
 	out := []agentModelJSON{}
 	for _, e := range listed {
 		m := agentModelJSON{ID: e.ID, Name: e.Name, Group: e.Provider.Name, Icon: e.Provider.Icon, Context: e.Context,
-			Hidden: off[e.ID], InUse: usedBy(a, vals, e), Own: a.ID == "codex" && provider.CodexOwn(e)}
+			Hidden: off[e.ID], InUse: usedBy(a, vals, e), Own: id == "codex" && provider.CodexOwn(e)}
 		if m.Name == "" {
 			m.Name = e.Model
 		}
@@ -188,7 +189,7 @@ func agentModelsAPI(mux *http.ServeMux) {
 			fail(rw, err)
 			return
 		}
-		writeJSON(rw, map[string]any{"models": agentModelList(a), "orderable": orderable(a.ID), "ordered": len(provider.ModelOrder(a.ID)) > 0})
+		writeJSON(rw, map[string]any{"models": agentModelList(a), "orderable": orderable(a.ListsFor()), "ordered": len(provider.ModelOrder(a.ListsFor())) > 0})
 	})
 	// hidden is every entry to take out of the agent's lists; the others
 	// are shown, and one the agent is set to is kept in whatever is asked
@@ -210,15 +211,15 @@ func agentModelsAPI(mux *http.ServeMux) {
 			return
 		}
 		if in.Order != nil {
-			if !orderable(a.ID) {
+			if !orderable(a.ListsFor()) {
 				fail(rw, errors.New(a.Name+"'s model list can't be put in an order"))
 				return
 			}
-			if err := provider.SetModelOrder(a.ID, *in.Order); err != nil {
+			if err := provider.SetModelOrder(a.ListsFor(), *in.Order); err != nil {
 				fail(rw, err)
 				return
 			}
-			writeJSON(rw, map[string]any{"models": agentModelList(a), "ordered": len(provider.ModelOrder(a.ID)) > 0})
+			writeJSON(rw, map[string]any{"models": agentModelList(a), "ordered": len(provider.ModelOrder(a.ListsFor())) > 0})
 			return
 		}
 		used := map[string]bool{}
@@ -231,10 +232,10 @@ func agentModelsAPI(mux *http.ServeMux) {
 				hidden = append(hidden, id)
 			}
 		}
-		if err := provider.SetHiddenModels(a.ID, hidden); err != nil {
+		if err := provider.SetHiddenModels(a.ListsFor(), hidden); err != nil {
 			fail(rw, err)
 			return
 		}
-		writeJSON(rw, map[string]any{"models": agentModelList(a), "count": modelCount(a.ID)})
+		writeJSON(rw, map[string]any{"models": agentModelList(a), "count": modelCount(a.ListsFor())})
 	})
 }

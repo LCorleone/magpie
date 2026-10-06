@@ -93,6 +93,11 @@ func balancePathOf(p Provider) string {
 	case path == sub2APIProfile:
 		// a sub2api panel's profile, asked with its login JWT: dollars
 		return "$data.balance"
+	case path == sub2APIKeyUsage:
+		// a sub2api panel's query for a key, asked with the key alone:
+		// what is left, in dollars, whether the wallet's, the key's own
+		// quota or its plan's
+		return "$remaining"
 	case strings.HasSuffix(path, creditGrants):
 		// OpenAI's old credit query, which relays still answer: dollars
 		return "$total_available"
@@ -114,6 +119,9 @@ const (
 	creditGrants = "/dashboard/billing/credit_grants"
 	// sub2APIProfile is a sub2api panel's account, told to its login JWT
 	sub2APIProfile = "/api/v1/user/profile"
+	// sub2APIKeyUsage is a sub2api panel's usage query for a key, which
+	// tells what is left on it (remaining, USD) without a login
+	sub2APIKeyUsage = "/v1/usage"
 )
 
 // balanceURLPath is a balance URL's path, without a slash at its end.
@@ -866,6 +874,8 @@ func KeyBalances(ctx context.Context) []SubscriptionQuota {
 	}
 	wg.Wait()
 	if ctx.Err() == nil {
+		// each balance kept, and drawn over time with its runs-out
+		noteBalanceHistory(out, time.Now())
 		c.Lock()
 		c.data = cacheCards(c.data, out, seq, again)
 		if !again {

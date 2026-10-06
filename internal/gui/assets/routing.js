@@ -125,6 +125,28 @@
   purposeClear.id = "rtPurposeClear";
   purposeClear.append(svg(CROSS, 11, 1.6));
   purposeTools.append(purposePick, purposeClear);
+  const metricOptions = [["duration", "Duration"], ["ttft", "First token"], ["tokens", "Tokens"],
+    ["cache", "Cache hit rate"], ["speed", "Output speed"], ["cost", "Cost"]];
+  let visibleMetrics = metricOptions.map(([key]) => key);
+  try {
+    const saved = JSON.parse(localStorage.getItem("magpie.routingMetrics"));
+    if (Array.isArray(saved)) visibleMetrics = metricOptions.map(([key]) => key).filter((key) => saved.includes(key));
+  } catch {}
+  const metricPick = el("button", "text rt-metric-pick"), metricLabel = el("span");
+  metricPick.type = "button";
+  metricPick.id = "rtMetrics";
+  metricPick.setAttribute("aria-haspopup", "menu");
+  metricPick.setAttribute("aria-expanded", "false");
+  metricPick.append(metricLabel, svg(CHEV, 11, 1.6));
+  metricPick.onclick = (e) => {
+    e.stopPropagation();
+    if (metricPick.classList.contains("open")) return closeProtoMenu();
+    openProtoMenu(metricPick, metricOptions.map(([v, name]) => ({ v, name, note: "" })), visibleMetrics, (keys) => {
+      visibleMetrics = keys;
+      try { localStorage.setItem("magpie.routingMetrics", JSON.stringify(keys)); } catch {}
+      steady(renderHist);
+    }, "Metrics to show", "rt-metric-menu", "right", true);
+  };
   let purpose = "";
   purposeClear.onclick = () => {
     closeProtoMenu();
@@ -174,12 +196,69 @@
   // burst at its end (usage.DecodeWindow, #731: a whole Gemini tool call,
   // 8264 tokens 1 ms before the end, read 8,264,000 tok/s)
   const speedOf = (out, ms, ttft) => out > 0 && ttft > 0 && ms - ttft >= 100 && out * 1000 <= 10000 * (ms - ttft) ? out / ((ms - ttft) / 1000) : 0;
+  function promptOf(r) {
+    let prompt = 0, read = 0;
+    // Input excludes both cache tiers. Include writes in the denominator,
+    // and every billable try, as the request's cost does. Older history
+    // without the tiers cannot tell a hit rate, even when it has tokens.
+    for (const u of r.usage || []) {
+      read += u.cache_read || 0;
+      prompt += (u.in || 0) + (u.cache_read || 0) + (u.cache_write || 0);
+    }
+    return { prompt, read };
+  }
+  function tokenBreakdown(rs) {
+    let input = 0, output = 0, read = 0, write = 0, recorded = 0;
+    for (const r of rs) {
+      if (!r.usage?.length) continue;
+      recorded++;
+      for (const u of r.usage) {
+        input += u.in || 0; output += u.out || 0;
+        read += u.cache_read || 0; write += u.cache_write || 0;
+      }
+    }
+    if (!recorded) return t("No token breakdown was recorded");
+    // The recorded tiers are disjoint: cached input is not counted again
+    // as uncached input, nor is reasoning counted again outside output.
+    const lines = [t("Token breakdown"), ...[["Input (uncached)", input], ["Output", output], ["Cache read", read], ["Cache write", write]]
+      .map(([label, n]) => t(label) + ": " + ledNum(n))];
+    if (rs.some((r) => r.tries.length > 1)) lines.push(t("Includes token usage from billable retries; the row totals show the final attempts"));
+    if (recorded < rs.length) lines.push(t("Breakdown available for {n} of {total} requests", { n: recorded, total: rs.length }));
+    return lines.join("\n");
+  }
+  function requestMetrics(r, how) {
+    const { prompt, read } = r.done ? promptOf(r) : { prompt: 0, read: 0 };
+    // Both times start at the request, so subtracting them leaves the
+    // reply's decode window even after a retry. Output is the reply's,
+    // not the prompt or the output of earlier billable tries.
+    const speed = r.done && how !== "bad" ? speedOf(r.out, r.ms, r.ttft) : 0;
+    const values = {
+      duration: ["duration", "Duration", r.done && r.ms ? took(r.ms) : "—", ""],
+      ttft: ["ttft", "First token", r.done && r.ttft ? took(r.ttft) : "—", t("First token")],
+      tokens: ["tokens", "Tokens", r.tokens ? tokens(r.tokens) : "—", tokenBreakdown([r])],
+      cache: ["cache-hit", "Cache", prompt ? pct(100 * read / prompt) : "—",
+        t("Cache hit rate") + ": " + t("The share of the prompt read from the cache")],
+      speed: ["speed", "Speed", speed ? t("{n} tok/s", { n: Math.round(speed) }) : "—",
+        t("Output tokens a second after the first, over the streamed replies")],
+      cost: ["cost", "Cost", routeCost(r), r.priced ? costNote() : t("No known price or token counts for this request")],
+    };
+    return visibleMetrics.map((key) => values[key]).filter((metric) => metric[2] !== "—");
+  }
+  function metricElement([cls, label, value, help], compact = false) {
+    const metric = el("span", "rt-metric " + (cls === "cost" ? "cost-metric" : cls));
+    if (!compact || cls === "ttft" || cls === "cache-hit") metric.append(el("span", "k", t(label)));
+    metric.append(el("span", "v" + (cls === "cost" ? " cost" : ""), value));
+    if (compact && cls === "tokens") metric.append(el("span", "k", t("{n} tokens", { n: "" }).trim()));
+    metric.title = help || t(label);
+    return metric;
+  }
   function firstNote(r, tr) {
-    if (!tr.ttft) return "";
-    let s = " · " + t("first token in {ms}", { ms: took(tr.ttft) });
-    if (tr.firstText > tr.ttft) s += " · " + t("first text in {ms}", { ms: took(tr.firstText) });
+    let s = tr.ttft ? " · " + t("first token in {ms}", { ms: took(tr.ttft) }) : "";
+    if (tr.ttft && tr.firstText > tr.ttft) s += " · " + t("first text in {ms}", { ms: took(tr.firstText) });
     const v = speedOf(r.out, tr.ms, tr.ttft);
     if (v) s += " · " + t("{n} tok/s", { n: Math.round(v) });
+    const { prompt, read } = promptOf(r);
+    if (prompt) s += " · " + t("request cache hit rate {p}", { p: pct(100 * read / prompt) });
     return s;
   }
   const tokens = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(Math.round(n));
@@ -219,7 +298,7 @@
   // from its vendor does — relays list each key its own group's models
   // or the user set the account or key to serve other models only (#474)
   // or it is held at the usage cap the user set on the account
-  const unlistedWord = (w) => w.capped ? t("held at its {cap}% usage cap", { cap: w.capped }) : w.barred ? t("set to serve other models, not {model}", { model: w.model }) : w.kind === "key" ? t("{name}'s list for this key has no {model}", { name: w.name, model: w.model }) : t("its plan doesn't list {model}", { model: w.model });
+  const unlistedWord = (w) => w.held ? t("not an account the gateway key may use") : w.capped ? t("held at its {cap}% usage cap", { cap: w.capped }) : w.barred ? t("set to serve other models, not {model}", { model: w.model }) : w.kind === "key" ? t("{name}'s list for this key has no {model}", { name: w.name, model: w.model }) : t("its plan doesn't list {model}", { model: w.model });
   const group = (w) => w.used >= 98 ? "spent" : w.used >= 90 ? "low" : "fine";
   const renews = (w) => (w.renews || []).map((s) => known0(s) ? at(s) : 0);
   // renewsBy is renews as Smart ranks them: an auto-used Codex reset that
@@ -356,7 +435,9 @@
     }
     const pooled = r.order.find((x) => !x.aside && x.kind === "key");
     for (const x of r.order.filter((x) => x.aside)) out.push(t("{who} is made for {api}, not {other} as the keys routed over are, so it isn't one of them: it's tried after them.", { who: who(x), api: API[x.speaks] || x.speaks || t("any API"), other: API[pooled?.speaks] || pooled?.speaks || t("any API") }));
-    for (const x of r.left || []) out.push(x.capped
+    for (const x of r.left || []) out.push(x.held
+      ? t("{who} is left out: the gateway key asking may not use its account.", { who: who(x) })
+      : x.capped
       ? t("{who} is left out: a usage window is at {n}, past the {cap}% cap set on the account, so it counts as used up until that window renews.", { who: who(x), n: pct(x.used), cap: x.capped })
       : x.barred
       ? t("{who} is left out: it is set to serve other models, not {model}.", { who: who(x), model: x.model })
@@ -1410,7 +1491,7 @@
   // button made again each time is one WebKit may drop a click on
   const reqLabel = el("span", "label"), replayAll = el("button", "text");
   replayAll.onclick = () => replay(listed(), pinned);
-  reqHead.append(reqLabel, el("span", "grow"), reqNote, purposeTools, replayAll);
+  reqHead.append(reqLabel, el("span", "grow"), reqNote, purposeTools, metricPick, replayAll);
   // each request's row, kept while what it says is the same: the list
   // is redrawn on every trace update, and made again whole each time it
   // was most of what a busy gateway cost the page (#308)
@@ -1495,8 +1576,16 @@
         if (r.priced) { s.cost += r.cost || 0; s.priced++; }
         if (!r.priced || r.unpriced) s.unpriced++;
         if (!r.done) s.running++;
+        else {
+          s.completed++;
+          const { prompt, read } = promptOf(r);
+          if (prompt) { s.prompt += prompt; s.read += read; s.cached++; }
+          if (outcome(r)[1] !== "bad" && speedOf(r.out, r.ms, r.ttft)) {
+            s.decodeMs += r.ms - r.ttft; s.decodeOut += r.out; s.timed++;
+          }
+        }
         return s;
-      }, { cost: 0, tokens: 0, priced: 0, unpriced: 0, running: 0 });
+      }, { cost: 0, tokens: 0, priced: 0, unpriced: 0, running: 0, completed: 0, prompt: 0, read: 0, cached: 0, decodeMs: 0, decodeOut: 0, timed: 0 });
       setText(x.arrow, g.key ? open ? "▾" : "▸" : "");
       // Background workers have their own IDs. Label groups made entirely
       // for one purpose without renaming a chat that also made helper calls.
@@ -1508,10 +1597,26 @@
         : suggestions ? kindWhy(g.r) + "\n"
         : g.rows.some((r) => r.parentMatched) ? t("Title requests were automatically matched using the prompt and the applied chat title.") + "\n" : "";
       x.name.title = g.key ? (name ? name + "\n" : "") + purpose + t("Session id") + ": " + groupSession(g.r) : t("These requests did not provide a session ID; they are not treated as one conversation.");
-      const bits = [t(g.rows.length === 1 ? "{n} request" : "{n} requests", { n: g.rows.length }), t("{n} tokens", { n: tokens(total.tokens) })];
+      const bits = [t(g.rows.length === 1 ? "{n} request" : "{n} requests", { n: g.rows.length })];
+      if (visibleMetrics.includes("tokens") && total.tokens) bits.push(t("{n} tokens", { n: tokens(total.tokens) }));
       if (total.running) bits.push(t("{n} in progress", { n: total.running }));
-      setText(x.meta, bits.join(" · "));
-      setText(x.cost, total.priced ? "≈" + fmtCost({ cost: total.cost, unpriced: 0 }) + (total.unpriced ? "+" : "") : "—");
+      const count = el("span", "session-count", bits[0]), tokenHelp = visibleMetrics.includes("tokens") && total.tokens ? tokenBreakdown(g.rows) : "";
+      if (tokenHelp) {
+        const amount = el("span", "rt-token-total", bits[1]);
+        amount.title = tokenHelp;
+        count.append(" · ", amount);
+      }
+      if (total.running) count.append(" · " + bits[bits.length - 1]);
+      const meta = [count];
+      const coverage = (n) => t("Based on {n} of {total} completed requests", { n, total: total.completed });
+      if (g.key && visibleMetrics.includes("cache") && total.prompt) meta.push(metricElement(["cache-hit", "Avg. cache", pct(100 * total.read / total.prompt),
+        t("Total cache reads divided by total prompt tokens; larger prompts carry more weight") + "\n" + coverage(total.cached)]));
+      if (g.key && visibleMetrics.includes("speed") && total.decodeMs) meta.push(metricElement(["speed", "Avg. speed", t("{n} tok/s", { n: Math.round(total.decodeOut * 1000 / total.decodeMs) }),
+        t("Total output tokens divided by total decode time; excludes waiting and replies without usable timing") + "\n" + coverage(total.timed)]));
+      const metaSig = JSON.stringify([bits, tokenHelp, meta.map((e) => [e.textContent, e.title])]);
+      if (x.meta.dataset.sig !== metaSig) { x.meta.replaceChildren(...meta); x.meta.dataset.sig = metaSig; }
+      setText(x.cost, total.priced ? "≈" + fmtCost({ cost: total.cost, unpriced: 0 }) + (total.unpriced ? "+" : "") : "");
+      x.cost.hidden = !visibleMetrics.includes("cost") || !total.priced;
       x.cost.title = costNote();
       if (g.key) x.b.setAttribute("aria-expanded", String(open));
       els.push(x.b);
@@ -1536,6 +1641,8 @@
     setText(purposeLabel, label);
     purposePick.setAttribute("aria-label", label);
     purposePick.title = t("Filter routing by purpose") + (purpose ? "\n" + label : "");
+    setText(metricLabel, t("Metrics"));
+    metricPick.title = t("Metrics to show");
     purposePick.onclick = (e) => {
       e.stopPropagation();
       if (purposePick.classList.contains("open")) return closeProtoMenu();
@@ -1587,17 +1694,15 @@
       const ag = agentOf(r.agent);
       const meta = [];
       if (r.tries.length > 1) meta.push(t("{n} tries", { n: r.tries.length }));
-      if (r.done && r.ms) meta.push(took(r.ms));
-      if (r.done && r.ttft) meta.push(t("TTFT {ms}", { ms: took(r.ttft) }));
-      if (r.tokens) meta.push(t("{n} tokens", { n: tokens(r.tokens) }));
+      const metrics = requestMetrics(r, how);
       // all the row says, and its titles
       const title = reqTitle(r, how, tr);
       const sig = JSON.stringify([lang, said, how, title, r.time, r.agent, agentName(r.agent), ag?.icon, r.model, r.provider, r.kind, r.effort,
-        tr?.effort, tr?.picked, tr?.fixed, tr?.fast, tr?.swapped && tr.done && tryOk(tr) ? [tr.model, tr.served] : 0, tr?.routed && tr.done && tryOk(tr) ? tr.served : 0, tr?.done && tryOk(tr) ? tr.upstream : 0, meta, routeCost(r)]);
+        tr?.effort, tr?.picked, tr?.fixed, tr?.fast, tr?.swapped && tr.done && tryOk(tr) ? [tr.model, tr.served] : 0, tr?.routed && tr.done && tryOk(tr) ? tr.served : 0, tr?.done && tryOk(tr) ? tr.upstream : 0, meta, metrics, routeCost(r)]);
       ids.add(r.id);
       let x = reqRows.get(r.id);
       if (!x || x.sig !== sig) {
-        const row = x = { sig, b: reqRow(r, said, how, tr, ag, meta, title) };
+        const row = x = { sig, b: reqRow(r, said, how, tr, ag, meta, metrics, title) };
         row.b.onclick = () => pick(row.r); // the request as it is when clicked
         reqRows.set(r.id, x);
       }
@@ -1619,7 +1724,7 @@
     }
     renderActs(rs);
   }
-  function reqRow(r, said, how, tr, ag, meta, title) {
+  function reqRow(r, said, how, tr, ag, meta, metrics, title) {
     const b = el("button", "rt-req " + how);
     const when = el("span", "at", new Date(r.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
     const asked = el("span", "asked");
@@ -1654,10 +1759,11 @@
     }
     if (tr?.swapped && tr.done && tryOk(tr)) to.append(swapTag(tr, true)); // beside the model asked for
     else if (tr?.routed && tr.done && tryOk(tr)) to.append(routedTag(tr));
-    if (tr?.upstream && tr.done && tryOk(tr)) to.append(upstreamTag(tr));
+    if (tr?.upstream && tr.done && tryOk(tr)) { to.append(upstreamTag(tr)); to.classList.add("upstreamed"); }
     const info = el("span", "meta");
-    info.append(el("span", "", meta.join(" · ")), el("span", "cost", routeCost(r)));
-    info.lastChild.title = r.priced ? costNote() : t("No known price or token counts for this request");
+    if (meta.length) info.append(el("span", "retry-count", meta.join(" · ")));
+    info.append(...metrics.map((m) => metricElement(m, true)));
+    info.hidden = !metrics.length && !meta.length;
     b.append(when, asked, to, info);
 
     b.title = title;
@@ -2138,14 +2244,14 @@
   // stale: it ends, the stage is drawn as it is now, and only the requests
   // still under way fly (#302).
   const LIVE = 4;
+  const underWay = () => pinned || day ? [] : [...src().values()].filter((r) => !r.done && matchesPurpose(r)).sort((a, b) => a.id - b.id).slice(-LIVE);
   function resume() {
     stopPlays();
     if (!loaded) return;
     if (!pinned && !rp) cur = newest();
     if (cur) sync(true);
     else empty();
-    const live = pinned || day ? [] : [...src().values()].filter((r) => !r.done && matchesPurpose(r)).sort((a, b) => a.id - b.id).slice(-LIVE);
-    for (const r of live) play(r.id);
+    for (const r of underWay()) play(r.id);
     renderAll();
   }
   let seen = false, lastFrame = 0, ticking = 0;
@@ -2277,6 +2383,9 @@
           if (wanted) { wanted = 0; params.delete("req"); history.replaceState(null, "", params.size ? "?" + params : location.pathname); }
           if (asked && asked.id !== newest().id) pinned = asked;
           if (r) { cur = r; sync(true); say(affWhy(r, true) || ruleWhy(r, true) || firstWhy(r)); renderAll(); } else empty();
+          // the page's first frame came before the trace did, and found
+          // nothing to fly: the requests under way fly now, not never
+          if (seen && shown()) for (const u of underWay()) if (!playing.has(u.id)) play(u.id);
         } else {
           if (cur && routes.has(cur.id) && !rp) cur = routes.get(cur.id);
           if (pinned && routes.has(pinned.id)) pinned = routes.get(pinned.id);
@@ -2388,7 +2497,19 @@
     try { groups = await api("groups"); } catch { return; }
     if (!gEdit && !gsec.contains(document.activeElement)) renderGroups(); // not under someone's hands
   }
+  const groupDirty = () => !!gEdit && gEdit.was !== undefined &&
+    (JSON.stringify(gEdit.draft) !== gEdit.was || !!gsec.querySelector(".rt-patadd input")?.value.trim());
+  async function cancelGroup() {
+    if (groupDirty() && !(await confirmDiscard())) return false;
+    gEdit = null;
+    renderGroups();
+    return true;
+  }
+  window.routingDirty = groupDirty;
+  window.discardRouting = () => { gEdit = null; renderGroups(); };
   async function groupAction(action, body, ok) {
+    if (action === "delete" && !await confirmRemoval(groups?.groups.find((g) => g.id === body.id)?.name || body.id,
+      "This routing group will no longer be available to agents.")) return;
     try {
       groups = await api("groups/" + action, body);
       gEdit = null;
@@ -2435,6 +2556,17 @@
   const fixedWords = (level) => t("{level} reasoning", { level });
   // a routing group among a group's members: group/<id>
   const subOf = (id) => id?.startsWith("group/") ? groups?.groups.find((x) => "group/" + x.id === id && !x.hidden) : null;
+  // a group's editor, its draft being the group as it is now. The group's own
+  // card opens it, and so does a group that is a member of another: such a
+  // member takes no reasoning of its own (provider.SaveGroup refuses
+  // "group/x:high"), so its row says where its reasoning is set and goes
+  // there, rather than leaving the slot empty.
+  const openGroupEditor = async (g) => {
+    if (groupDirty() && !(await confirmDiscard())) return false;
+    gEdit = { id: g.id, draft: { name: g.name, members: [...g.members], match: [...(g.match || [])], matched: [...(g.matched || [])], fast: [...(g.fast || [])], off: [...(g.off || [])], routing: g.routing || "", pick: g.pick || "", affinity: g.affinity || "", sink: !!g.sink, firstToken: g.firstToken || 0, context: g.context || 0, classifier: g.classifier || "", effort: g.effort || "", levels: [...(g.levels || [])], rules: (g.rules || []).map((r) => ({ ...r, intent: r.intent || "", agents: [...(r.agents || [])], time: r.time ? { ...r.time, days: [...(r.time.days || [])] } : null })) } };
+    renderGroups();
+    return true;
+  };
   const groupIcons = (g) => [...new Map((g.memberInfo || []).filter((i) => i.icon).map((i) => [i.provider || i.icon, i.icon])).values()];
   const memberIcon = (id) => { const s = subOf(id); return s ? stackIcon(groupIcons(s)) : icon(modelOf(id)?.icon || "generic"); };
   const memberName = (id) => { const s = subOf(id), m = modelOf(id); return s ? s.name : m ? m.name || m.id : id; };
@@ -2479,12 +2611,15 @@
     const shown = words.length ? all.filter((g) => gEdit?.id === g.id || groupMatches(g, words)) : all;
     if (gSel) gSel = new Set([...gSel].filter((id) => shown.some((g) => g.id === id)));
     if (gSel && !all.length) gSel = null;
-    const newBtn = el("button", "text", t("New group"));
-    newBtn.onclick = () => { gSel = null; gEdit = { id: "", draft: { name: "", members: [], match: [], matched: [], fast: [], off: [], routing: "", affinity: "", rules: [] } }; renderGroups(); };
+    const newBtn = el("button", "text rt-gnew");
+    newBtn.type = "button";
+    newBtn.append(svg(PLUS, 11, 1.8), el("span", "", t("New group")));
+    newBtn.onclick = () => newGroup();
     const head = [el("span", "label", t("Routing groups")), el("span", "grow"), el("span", "note", t("models agents pick as one"))];
     const typing = document.activeElement === gQ, [a, b] = [gQ.selectionStart, gQ.selectionEnd];
     if (all.length > 1 || gQ.value) {
       gQ.placeholder = t("Filter groups and models");
+      gQ.setAttribute("aria-label", gQ.placeholder);
       head.push(gQ);
     }
     if (!gSel) {
@@ -2492,7 +2627,10 @@
       if (all.length > 1) {
         const pick = el("button", "text rt-gselect", t("Select"));
         pick.title = t("Pick several groups to remove together");
-        pick.onclick = () => { gEdit = null; gSel = new Set(); renderGroups(); };
+        pick.onclick = async () => {
+          if (groupDirty() && !(await confirmDiscard())) return;
+          gEdit = null; gSel = new Set(); renderGroups();
+        };
         head.push(pick);
       }
       head.push(newBtn);
@@ -2534,8 +2672,7 @@
     renderPools();
   }
   // selectBar: over the groups while picking: all or none, how many are
-  // picked, Remove them (a second click, as it can't be undone for the
-  // groups the user made), and Done
+  // picked, Remove them after confirmation, and Done
   function selectBar(shown) {
     const bar = el("div", "rt-gsel");
     const all = el("input");
@@ -2547,16 +2684,13 @@
     const done = el("button", "text", t("Done"));
     done.type = "button";
     done.onclick = () => { gSel = null; renderGroups(); };
-    let armed = 0;
     const sync = () => {
       const k = gSel.size;
       all.checked = k > 0 && k === shown.length;
       all.indeterminate = k > 0 && k < shown.length;
       n.textContent = k ? t("{n} selected", { n: k }) : t("Pick the groups to remove");
       rm.disabled = !k;
-      if (!k) armed = 0;
-      rm.textContent = armed ? t("Remove {n}? Click again", { n: k }) : t("Remove");
-      rm.classList.toggle("armed", !!armed);
+      rm.textContent = t("Remove");
       for (const r of gList.querySelectorAll(".rt-gpick")) {
         const on = gSel.has(r.dataset.id);
         r.classList.toggle("on", on);
@@ -2564,11 +2698,11 @@
       }
     };
     bar.sync = sync;
-    all.onchange = () => { gSel = new Set(all.checked ? shown.map((g) => g.id) : []); armed = 0; sync(); };
+    all.onchange = () => { gSel = new Set(all.checked ? shown.map((g) => g.id) : []); sync(); };
     rm.onclick = async () => {
       if (!gSel.size) return;
-      if (!armed || Date.now() - armed > 5000) { armed = Date.now(); sync(); return; }
       const ids = shown.map((g) => g.id).filter((id) => gSel.has(id));
+      if (!await confirmRemoval(shown.filter((g) => ids.includes(g.id)).map((g) => g.name).join(t(", ")), "These routing groups will no longer be available to agents.")) return;
       rm.disabled = true;
       try {
         groups = await api("groups/delete", { ids });
@@ -2577,7 +2711,6 @@
         status(ids.length === 1 ? t("{name} removed", { name: ids[0] }) : t("{n} groups removed", { n: ids.length }), "ok");
         load(); // the gateway's model list, the agents' pickers
       } catch (e) {
-        armed = 0;
         sync();
         status(e.message, "err");
       }
@@ -2635,6 +2768,7 @@
     gNames.replaceChildren(txt, suffixSegs(() => renderGroups()));
   }
   async function setFound(on, s) {
+    if (groupDirty() && !(await confirmDiscard())) return;
     s.classList.toggle("on", on);
     s.setAttribute("aria-checked", String(on));
     try {
@@ -2686,7 +2820,7 @@
     else if (!g.ready) tags.append(el("span", "tag bad", t("no member ready")));
     const edit = el("button", "text", t("Edit"));
     edit.onclick = (e) => { e.stopPropagation(); open(); };
-    const open = () => { gEdit = { id: g.id, draft: { name: g.name, members: [...g.members], match: [...(g.match || [])], matched: [...(g.matched || [])], fast: [...(g.fast || [])], off: [...(g.off || [])], routing: g.routing || "", pick: g.pick || "", affinity: g.affinity || "", sink: !!g.sink, firstToken: g.firstToken || 0, context: g.context || 0, classifier: g.classifier || "", effort: g.effort || "", levels: [...(g.levels || [])], rules: (g.rules || []).map((r) => ({ ...r, intent: r.intent || "", agents: [...(r.agents || [])], time: r.time ? { ...r.time, days: [...(r.time.days || [])] } : null })) } }; renderGroups(); };
+    const open = () => openGroupEditor(g);
     row.onclick = open;
     row.oncontextmenu = (e) => { e.preventDefault(); groupMenu(ics, g); };
     row.append(ics, main, tags, edit);
@@ -2842,7 +2976,7 @@
     h.append(el("b", "", g ? g.name : t("New group")));
     if (g?.auto) h.append(el("span", "note", t("found by magpie — saving a change makes it yours")));
     ed.append(h);
-    const keys = (i) => { i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") { gEdit = null; renderGroups(); } else if (e.key === "Enter" && i === name) saveBtn.onclick(); }; return i; };
+    const keys = (i) => { i.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Escape") { cancelGroup(); } else if (e.key === "Enter" && i === name) saveBtn.onclick(); }; return i; };
     const name = keys(input(d.name, t("e.g. Opus anywhere")));
     const idHint = el("div", "hint");
     // an existing group's id can change (an auto- one found by magpie too);
@@ -2852,7 +2986,6 @@
     // from the row (ARNO on Discord) — only while nothing in it has
     // changed, so a stray click never throws an edit away; Cancel does that
     if (g) {
-      if (gEdit.was === undefined) gEdit.was = JSON.stringify(d);
       h.classList.add("fold");
       h.setAttribute("role", "button");
       h.tabIndex = 0;
@@ -2951,6 +3084,12 @@
       list.replaceChildren();
       d.members.forEach((id, i) => {
         const m = modelOf(id), s = subOf(id);
+        // a member that is itself a group is in none of groups.models
+        // (groupsState leaves groups out of it), so it is read from its own
+        // memberInfo instead: without this its row carried no chips at all,
+        // and a group inside a group said nothing of what it takes
+        const info = infoOf(id);
+        const chips = m || (s ? info : undefined);
         const row = el("div", "fbrow");
         const n = el("span", "n");
         n.append(el("span", "", memberName(id)));
@@ -2979,7 +3118,7 @@
         // A member whose list says nothing of images is marked unknown rather
         // than text-only: magpie counts it text-only for a describer
         // (gateway.blindTo), which is not the same as its list saying so.
-        if (m) row.append(modelInfo({ ...m, images: infoOf(id)?.images ?? m.images, imagesUnknown: infoOf(id)?.imagesUnknown ?? m.imagesUnknown }));
+        if (chips) row.append(modelInfo({ ...chips, group: !!s, images: info?.images ?? chips.images, imagesUnknown: info?.imagesUnknown ?? chips.imagesUnknown }));
         // the reasoning the model is sent at in this group: the group's
         // (blank), or one of its own whatever the agent asks. A group in
         // it reasons as it says.
@@ -3015,6 +3154,23 @@
             fb.onclick = () => { d.fast = on ? d.fast.filter((x) => x !== id) : [...d.fast, id]; draw(); };
             row.append(fb);
           }
+        } else {
+          // a group in the group takes no reasoning of its own: its models
+          // reason as it says (provider.SaveGroup refuses "group/x:high", and
+          // the gateway has nowhere to put one). So the slot a model's own
+          // picker sits in says where it is set instead, and goes there.
+          const hx = el("button", "rt-cond rt-fixed rt-inner");
+          hx.type = "button";
+          // in a span, so a long group's name ellipsizes instead of widening
+          // the row: the desktop app's member row doesn't wrap
+          hx.append(el("span", "", t("Follows {name}", { name: s.name })));
+          hx.title = t("Its models reason as {name} says: set that up on {name}'s own card, not here", { name: s.name });
+          hx.onclick = async (ev) => {
+            if (!(await openGroupEditor(s))) return;
+            const ed = gList.querySelector(".rt-gedit");
+            if (ed && window.scrollOnPurpose?.(ev)) ed.scrollIntoView({ block: "center", behavior: "smooth" });
+          };
+          row.append(hx);
         }
         if (s) row.title = s.members.map((x) => memberLabel(s, x)).join(s.routing === "order" ? " → " : " · ");
         if (!m && !s) { row.classList.add("off"); row.title = t("No provider serves {id} now; it is skipped", { id }); }
@@ -3107,7 +3263,7 @@
       return "";
     };
     pAdd.onclick = () => { addPattern(); };
-    pin.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") addPattern(); else if (e.key === "Escape") { gEdit = null; renderGroups(); } };
+    pin.onkeydown = (e) => { e.stopPropagation(); if (e.key === "Enter") addPattern(); else if (e.key === "Escape") cancelGroup(); };
     const padd = el("div", "rt-patadd");
     padd.append(pin, pAdd);
     pbox.append(plist, padd);
@@ -3145,12 +3301,16 @@
     const ctxHint = el("div", "hint"), ctxW = el("div", "ctx-wrap");
     const ctxIn = keys(input(d.context > 0 ? ctxShort(d.context).toLowerCase() : "", t("e.g. 200k")));
     ctxIn.classList.add("ctx-in");
+    ctxIn.setAttribute("aria-label", t("Context"));
+    ctxHint.id = "groupContextHint";
+    ctxIn.setAttribute("aria-describedby", ctxHint.id);
     const ctxs = () => d.members.map((id) => groups.models.find((x) => x.id === id)?.context || infoOf(id)?.context || 0).filter((n) => n > 0);
     const ctxMode = () => d.context === -1 ? "smallest" : d.context > 0 ? "custom" : "largest";
     let ctxErr = "";
     const drawCtx = () => {
       const ns = ctxs(), mode = ctxMode();
       ctxIn.hidden = mode !== "custom";
+      ctxIn.setAttribute("aria-invalid", String(!!ctxErr));
       const big = ns.length ? Math.max(...ns) : 0, small = ns.length ? Math.min(...ns) : 0;
       ctxHint.textContent = ctxErr || (mode === "custom"
         ? t("Agents are told the group takes {n} tokens; a longer conversation still goes on to a member with room for it.", { n: (d.context || 0).toLocaleString() })
@@ -3422,7 +3582,7 @@
     }
     bar.append(el("span", "grow"));
     const cancel = el("button", "text", t("Cancel"));
-    cancel.onclick = () => { gEdit = null; renderGroups(); };
+    cancel.onclick = cancelGroup;
     const saveBtn = el("button", "text primary", t(g ? "Save" : "Add"));
     const save = () => {
       if (addPattern() === null) return pin.focus({ preventScroll: true }); // typed, not added: it is meant
@@ -3461,6 +3621,7 @@
     bar.append(cancel, saveBtn);
     ed.append(bar);
     if (!g) setTimeout(() => name.focus({ preventScroll: true }), 0); // WebKit would scroll the page to put it mid-view
+    if (gEdit.was == null) gEdit.was = JSON.stringify(d);
     return ed;
   }
   // the providers that route over several accounts or keys of their own
@@ -3504,14 +3665,33 @@
   // ask it (and the tray panel, by ?newgroup= on the window it opens).
   window.newGroupWith = async (id, name, ev) => {
     // app.js's show, the page's: this one's own show is the stage's caption
-    if (document.body.classList.contains("window") && $("#view-routing").hidden) window.show("routing");
+    if (document.body.classList.contains("window") && $("#view-routing").hidden && !(await window.show("routing"))) return;
     if (!groups) await loadGroups();
     if (!groups) return;
+    if (groupDirty() && !(await confirmDiscard())) return;
     gEdit = { id: "", draft: { name: name || modelOf(id)?.name || id.split("/").pop(), members: [id], fast: [], routing: "", affinity: "", rules: [] } };
     renderGroups();
     const ed = gList.querySelector(".rt-gedit");
     if (ed && window.scrollOnPurpose?.(ev)) ed.scrollIntoView({ block: "center", behavior: "smooth" });
     ed?.querySelector("input")?.focus({ preventScroll: true });
+  };
+  // newGroup: an empty new group's editor. The groups sit below the
+  // requests, out of sight on a first look, so the page's head has a New
+  // group too (mintonight, #944), which brings the editor into view.
+  async function newGroup(ev) {
+    if (groupDirty() && !(await confirmDiscard())) return;
+    gSel = null;
+    gEdit = { id: "", draft: { name: "", members: [], match: [], matched: [], fast: [], off: [], routing: "", affinity: "", rules: [] } };
+    renderGroups();
+    if (!ev) return;
+    const ed = gList.querySelector(".rt-gedit");
+    if (ed && window.scrollOnPurpose?.(ev)) ed.scrollIntoView({ block: "center", behavior: "smooth" });
+    ed?.querySelector("input")?.focus({ preventScroll: true });
+  }
+  const headNew = $("#rtNewGroup");
+  if (headNew) headNew.onclick = async (ev) => {
+    if (!groups) await loadGroups();
+    if (groups) newGroup(ev);
   };
   const askedGroup = document.body.classList.contains("window") && params.get("newgroup");
   if (askedGroup) loadGroups().then(() => window.newGroupWith(askedGroup, ""));

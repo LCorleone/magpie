@@ -63,6 +63,11 @@ type memberJSON struct {
 	// model has one (provider.CanFast)
 	Fast    bool `json:"fast,omitempty"`
 	CanFast bool `json:"canFast,omitempty"`
+	// Efforts: the reasoning levels this member is offered. A model's own,
+	// or — a member that is itself a group — the levels it passes on to
+	// agents, which are the ones every model in it has (provider.groupEntries).
+	// The editor says them in the same chips a model's row does (modelInfo).
+	Efforts []string `json:"efforts,omitempty"`
 	// what a rule may send it: the tokens it takes, when known, and images
 	Context int  `json:"context,omitempty"`
 	Images  bool `json:"images,omitempty"`
@@ -203,6 +208,9 @@ func groupsState() groupsJSON {
 						_, ms, _ := provider.FindGroup(id)
 						m.Ready, m.Name, m.Icon, m.On = true, e.Name, e.Provider.Icon, len(ms)
 						m.Context, m.Images, m.ImagesUnknown = e.Context, seesImages(e), imagesUnknown(e)
+						// the levels it offers agents: those every model in
+						// it has, not one of them its own
+						m.Efforts = e.Efforts
 						gj.Ready = true
 						break
 					}
@@ -223,6 +231,7 @@ func groupsState() groupsJSON {
 				for _, e := range served {
 					if e.Group == "" && e.Provider.ID == p.ID && e.Model == model {
 						m.Context, m.Images, m.ImagesUnknown = e.Context, seesImages(e), imagesUnknown(e)
+						m.Efforts = e.Efforts
 						break
 					}
 				}

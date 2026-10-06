@@ -34,6 +34,18 @@ import (
 // ends with the error, as it used to at once.
 const streamRetries = 2
 
+// emptyRetries is how many times a reply that said nothing (#667) is asked
+// again on the same account before it fails: once while its stream is
+// held, which the request then asks again, or of another account — or the
+// group of its next member — and as often as a cut reply once the client
+// has the stream, when nobody asks again after it.
+func emptyRetries(w http.ResponseWriter, ctx context.Context) int {
+	if h, ok := w.(*holdWriter); ok && h.mayAskAgain() || inGroupTry(ctx) {
+		return 1
+	}
+	return streamRetries
+}
+
 // errStreamCut ends a reply's read once its error event is in hand,
 // without waiting on a vendor that keeps the connection open after it.
 var errStreamCut = errors.New("stream cut mid-reply")
@@ -239,6 +251,7 @@ func (s *Server) streamTranslated(w http.ResponseWriter, r *http.Request, p prov
 	var failedStatus int
 	var cut, errSent bool
 	var empty bool // a reply in this protocol that says nothing fails (#667)
+	empties := 0   // the times such a reply was asked again here
 	said, stop := false, ""
 	var kept []Event       // the reply's end, while nothing is said in it
 	var before, this Usage // what the tries before this one billed, and this try
@@ -374,6 +387,23 @@ func (s *Server) streamTranslated(w http.ResponseWriter, r *http.Request, p prov
 				held()
 			}
 			if empty && !said && answersNothing(stop) {
+				if empties < emptyRetries(w, r.Context()) && r.Context().Err() == nil {
+					// asked again here first, for the agent to have the
+					// answer rather than the error: Gemini on a long
+					// conversation now and then ends with only its
+					// reasoning several times running, and an agent told
+					// the error stops its run (#667, Pi). What reasoning
+					// the client has stays, the next try's follows it.
+					empties++
+					before, this = before.plus(this, false), Usage{}
+					kept, stop = nil, ""
+					enc.keepalive()
+					select {
+					case <-time.After(retryPause << (empties - 1)):
+					case <-r.Context().Done():
+					}
+					continue
+				}
 				// as an error it is asked again, or of another account,
 				// and an agent told it tries again rather than end its
 				// turn (#667); a reply that said nothing has nothing to
