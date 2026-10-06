@@ -113,7 +113,7 @@ func (s *Server) codexBackend(w http.ResponseWriter, r *http.Request) {
 			break // preserve native compaction's existing passthrough
 		}
 		body, _ = codexInput(body, false)
-		if id, ok := codexAccounts(r.Header, model); ok {
+		if id, ok := codexAccounts(r, model); ok {
 			s.serveAgent(w, r, provider.Responses, withModel(body, id))
 			return
 		}
@@ -252,7 +252,11 @@ func codexReader(r *http.Request) (io.ReadCloser, error) {
 // magpie: the codex subscription's model (codex/<model>), which goes to the
 // account Codex is signed in to and, when that one is out of its allowance
 // or rate limited, on to the next — as it can't when relayed as it came.
-func codexAccounts(h http.Header, model string) (string, bool) {
+// A gateway key held to some models or accounts (#882, #905) is served
+// through it always, alone no less: the relay would spend Codex's own
+// sign-in with nothing of the key asked, its accounts and its models both.
+func codexAccounts(r *http.Request, model string) (string, bool) {
+	h := r.Header
 	if model == "" || strings.Contains(model, "/") || apiKey(h) {
 		return "", false
 	}
@@ -263,6 +267,16 @@ func codexAccounts(h http.Header, model string) (string, bool) {
 	// an account with a usage cap goes through routing, which holds it
 	// there, even alone: relayed as it came, nothing would
 	if ok && p.Account != nil && p.Account.Agent == "codex" && p.AccountCap(p.Account.User) > 0 {
+		return id, true
+	}
+	// the key's holds are served, not relayed past: a key held to some
+	// models or accounts goes through routing, which holds it to them,
+	// where the relay as it came asks nothing of the key — an account it
+	// may not use spent, a model it may not asked for. Neither list set,
+	// the relay is the key's as it always was
+	_, keyHeld := keyHolds(r)
+	_, accHeld := accountHolds(r)
+	if keyHeld || accHeld {
 		return id, true
 	}
 	if !ok || p.Account == nil || p.Account.Agent != "codex" || len(p.AlsoOn()) == 0 && !pinned {
