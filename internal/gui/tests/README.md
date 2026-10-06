@@ -521,6 +521,15 @@ element, and a click on it still picks it. With another tab open, the list
 isn't touched, and coming back lists every request that came meanwhile. It
 runs in English and Chinese.
 
+`routing-weight-chip.test.cjs` checks the stage's header for a provider
+routed By weight (#841): the MODES table had no weight entry, so the chip
+and the mode paragraph under it fell back to Smart's. A trace over two
+weighted keys now has the chip read By weight and the mode paragraph say
+what the provider editor's routing option says (the words already spoken in
+each language), with the story telling whose share went first, while keys
+under Smart keep Smart's chip and the keys' own mode line. It runs in
+English, Chinese, Japanese and German on Chromium and WebKit.
+
 `balance-fix.test.cjs` opens a custom provider whose balance token sits
 beside new-api's `/api/usage/token` (and a new one with a token and no
 Balance URL): the editor says so, one click moves it to `/api/user/self`
