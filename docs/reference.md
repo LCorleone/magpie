@@ -287,8 +287,9 @@ before a provider is asked; a fallback it may not use is skipped. A key with
 no models listed may use every model.
 
 A gateway key can also be held to some **accounts** (#905): the accounts
-and keys its requests may use, picked in the same menu after the models —
-an account by who is signed in, a key by its fingerprint — or with
+and keys its requests may use, picked in the same menu right after their
+provider's models — an account by who is signed in, a key by its
+fingerprint — or with
 `magpie gateway-key accounts <id> codex/me@example.com openai/<key id>`
 (`all` takes the restriction off). The list holds a key to some accounts
 **of the providers it names**: a provider it names no account of, the key
